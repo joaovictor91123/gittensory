@@ -558,6 +558,7 @@ export function buildOpenApiSpec() {
       200: { description: "Browser extension PR context overlay payload", content: { "application/json": { schema: z.record(z.unknown()) } } },
       400: { description: "Invalid pull context query" },
       401: { description: "Unauthorized" },
+      403: { description: "Extension-scoped session required" },
     },
   });
   registry.registerPath({
@@ -647,7 +648,7 @@ function applySecurityMetadata(document: GeneratedOpenApiDocument): GeneratedOpe
       GittensoryBearer: {
         type: "http",
         scheme: "bearer",
-        description: "Static API/MCP token or GitHub device-flow Gittensory session token.",
+        description: "Static API/MCP token, GitHub device-flow Gittensory session token, or extension-scoped Gittensory session token where supported. GitHub personal access tokens are not accepted.",
       },
       GittensorySessionCookie: {
         type: "apiKey",
