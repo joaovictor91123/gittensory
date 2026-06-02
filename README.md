@@ -25,7 +25,7 @@ It is not a Gittensor explorer, public leaderboard, reward-farming bot, or auton
 ## Install MCP
 
 ```sh
-npm install -g @jsonbored/gittensory-mcp
+npm install -g @jsonbored/gittensory-mcp@latest
 gittensory-mcp login
 gittensory-mcp doctor
 gittensory-mcp --stdio
