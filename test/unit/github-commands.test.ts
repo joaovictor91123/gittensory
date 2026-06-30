@@ -1517,6 +1517,39 @@ describe("GitHub mention commands", () => {
     expect(emptyNoise).not.toContain("Suggested triage:");
   });
 
+  it("counts failing cached checks with the canonical readiness classifier (status-carried, startup_failure, case-fold)", () => {
+    const prWithChecks = (number: number, checks: Array<{ status: string; conclusion?: string | null }>) =>
+      buildMaintainerQueueDigest({
+        repo: { fullName: "owner/repo", isRegistered: true, registryConfig: { emissionShare: 0.1, issueDiscoveryShare: 0, labelMultipliers: {}, maintainerCut: 0, raw: {}, repo: "owner/repo" } } as any,
+        issues: [issue(1, "Linked fix")],
+        pullRequests: [pr(number, "Check signal coverage", "alice", { linkedIssues: [1], updatedAt: "2099-01-01T00:00:00.000Z" })],
+        checkSummariesByPullNumber: {
+          [number]: checks.map((check, index) => ({
+            id: `check-${number}-${index}`,
+            repoFullName: "owner/repo",
+            pullNumber: number,
+            name: `check-${index}`,
+            status: check.status,
+            conclusion: check.conclusion ?? null,
+            payload: {},
+          })),
+        },
+      });
+
+    const statusCarried = prWithChecks(20, [{ status: "failure", conclusion: null }]).needsAuthorPullRequests[0];
+    expect(statusCarried?.signals).toContain("checks_need_attention");
+    expect(statusCarried?.reasons).toContain("1 cached check(s) need attention.");
+
+    const startupFailure = prWithChecks(21, [{ status: "completed", conclusion: "startup_failure" }]).needsAuthorPullRequests[0];
+    expect(startupFailure?.signals).toContain("checks_need_attention");
+
+    const mixedCase = prWithChecks(22, [{ status: "completed", conclusion: "FAILURE" }]).needsAuthorPullRequests[0];
+    expect(mixedCase?.signals).toContain("checks_need_attention");
+
+    const clean = prWithChecks(23, [{ status: "completed", conclusion: "success" }]).needsAuthorPullRequests[0];
+    expect(clean?.signals ?? []).not.toContain("checks_need_attention");
+  });
+
   it("builds maintainer-only queue digests with safe routing, sorting, and private-detail pointers", () => {
     const digest = sampleMaintainerDigest();
     expect(digest.totals.confirmedMinerPullRequests).toBe(2);
