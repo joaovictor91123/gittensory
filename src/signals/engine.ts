@@ -27,6 +27,7 @@ import { nowIso } from "../utils/json";
 import { sanitizePublicComment } from "../queue-intelligence";
 import { labelMatchesPattern, projectLinkedIssueMultiplierForPlannedSolve, type LinkedIssueMultiplierStatus } from "../scoring/preview";
 import { hasLocalTestEvidence } from "./test-evidence";
+import { isFailingCheckSummary } from "./local-branch";
 import { isDuplicateClusterWinnerByClaim } from "./duplicate-winner";
 import { PREFLIGHT_LIMITS } from "./preflight-limits";
 import type { UnifiedCollapsible } from "../review/unified-comment";
@@ -2719,7 +2720,7 @@ export function buildPullRequestMaintainerPacket(args: {
   const deletions = args.files.reduce((sum, file) => sum + file.deletions, 0);
   const approvalCount = args.reviews.filter((review) => review.state.toUpperCase() === "APPROVED").length;
   const changeRequestCount = args.reviews.filter((review) => review.state.toUpperCase() === "CHANGES_REQUESTED").length;
-  const checkFailureCount = args.checks.filter((check) => check.conclusion === "failure" || check.conclusion === "timed_out" || check.conclusion === "cancelled").length;
+  const checkFailureCount = args.checks.filter(isFailingCheckSummary).length;
   const findings: SignalFinding[] = [];
   if (!pr) {
     findings.push({
