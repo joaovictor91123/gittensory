@@ -123,12 +123,16 @@ describe("gittensory-miner CLI helpers", () => {
     expect(first.createdConfigDir).toBe(true);
     expect(first.createdStateFile).toBe(true);
     expect(existsSync(first.statePath)).toBe(true);
+    expect(readFileSync(first.statePath).subarray(0, 16).toString("utf8")).toBe(
+      "SQLite format 3\u0000",
+    );
 
-    writeFileSync(first.statePath, "sentinel");
     const second = initMinerState(env);
     expect(second.createdConfigDir).toBe(false);
     expect(second.createdStateFile).toBe(false);
-    expect(readFileSync(second.statePath, "utf8")).toBe("sentinel");
+    expect(readFileSync(second.statePath).subarray(0, 16).toString("utf8")).toBe(
+      "SQLite format 3\u0000",
+    );
     rmSync(root, { recursive: true, force: true });
   });
 

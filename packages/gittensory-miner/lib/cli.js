@@ -1,7 +1,8 @@
-import { accessSync, constants, existsSync, mkdirSync, openSync, closeSync } from "node:fs";
+import { accessSync, constants, existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { DatabaseSync } from "node:sqlite";
 
 const defaultStateFileName = "state.sqlite3";
 
@@ -48,8 +49,20 @@ export function initMinerState(env = process.env) {
   mkdirSync(configDir, { recursive: true });
   const createdStateFile = !existsSync(statePath);
   if (createdStateFile) {
-    const fd = openSync(statePath, "w");
-    closeSync(fd);
+    const db = new DatabaseSync(statePath);
+    db.exec(
+      [
+        "PRAGMA journal_mode = WAL;",
+        "CREATE TABLE IF NOT EXISTS miner_state_meta (",
+        "  key TEXT PRIMARY KEY,",
+        "  value TEXT NOT NULL",
+        ");",
+        "INSERT INTO miner_state_meta(key, value)",
+        "VALUES ('schema_version', '1')",
+        "ON CONFLICT(key) DO NOTHING;",
+      ].join("\n"),
+    );
+    db.close();
   }
   return { configDir, statePath, createdConfigDir, createdStateFile };
 }
