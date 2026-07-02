@@ -15,6 +15,7 @@ import { isTestPath } from "../signals/test-evidence";
 import { nowIso } from "../utils/json";
 import { GITTENSORY_GATE_CHECK_NAME } from "../review/check-names";
 import { REVIEW_THREAD_BLOCKER_CODE } from "../review/review-thread-findings";
+import { labelMatchesPattern } from "../scoring/preview";
 
 export type GateCheckConclusion = "success" | "failure" | "action_required" | "neutral" | "skipped";
 
@@ -710,8 +711,8 @@ function addPullRequestFindings(
       publicText: "This repo has a busy review queue in the local Gittensory cache.",
     });
   }
-  const repoMultipliers = repo?.registryConfig?.labelMultipliers ?? {};
-  const matchedLabels = pr.labels.filter((label) => repoMultipliers[label] !== undefined);
+  const multiplierPatterns = Object.keys(repo?.registryConfig?.labelMultipliers ?? {});
+  const matchedLabels = pr.labels.filter((label) => multiplierPatterns.some((pattern) => labelMatchesPattern(label, pattern)));
   if (matchedLabels.length > 0) {
     findings.push({
       code: "label_context_found",

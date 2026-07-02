@@ -489,6 +489,51 @@ describe("advisory rules", () => {
     expect(codes).toEqual(expect.arrayContaining(["pr_not_open", "busy_pr_queue", "label_context_found", "maintainer_authored_pr"]));
   });
 
+  it("matches configured label multipliers case-insensitively and with glob patterns", () => {
+    const repoWithPatterns: RepositoryRecord = {
+      ...repo,
+      registryConfig: {
+        ...repo.registryConfig!,
+        labelMultipliers: { feature: 1.5, "type:*": 1.2 },
+      },
+    };
+    const caseMismatch = buildPullRequestAdvisory(repoWithPatterns, {
+      repoFullName: repo.fullName,
+      number: 16,
+      title: "Feature work",
+      state: "open",
+      authorLogin: "miner1",
+      authorAssociation: "NONE",
+      labels: ["Feature"],
+      linkedIssues: [7],
+    });
+    expect(caseMismatch.findings.some((finding) => finding.code === "label_context_found")).toBe(true);
+
+    const globMatch = buildPullRequestAdvisory(repoWithPatterns, {
+      repoFullName: repo.fullName,
+      number: 17,
+      title: "Bug fix",
+      state: "open",
+      authorLogin: "miner1",
+      authorAssociation: "NONE",
+      labels: ["type:bug-fix"],
+      linkedIssues: [7],
+    });
+    expect(globMatch.findings.some((finding) => finding.code === "label_context_found")).toBe(true);
+
+    const noMatch = buildPullRequestAdvisory(repoWithPatterns, {
+      repoFullName: repo.fullName,
+      number: 18,
+      title: "Docs only",
+      state: "open",
+      authorLogin: "miner1",
+      authorAssociation: "NONE",
+      labels: ["docs"],
+      linkedIssues: [7],
+    });
+    expect(noMatch.findings.some((finding) => finding.code === "label_context_found")).toBe(false);
+  });
+
   it("handles uncached PRs and closed issues", () => {
     const closedIssue: IssueRecord = {
       repoFullName: repo.fullName,
