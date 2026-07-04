@@ -58,6 +58,133 @@ rankOpportunities(candidates); // sorted by descending score, each annotated wit
 `rankOpportunities` is a stable sort with an explicit index tie-break: candidates with an equal score keep their
 input order.
 
+## Objective-anchor calibration
+
+`scoreObjectiveAnchor()` provides the deterministic half of historical replay calibration. It compares the structural
+features of a miner replay against the revealed post-snapshot history without any model call, network call, wall-clock
+read, or random input.
+
+The score is intended for replay harnesses that need an auditable floor before a pairwise judge runs. Callers pass
+the replayed plan or PR target data and the revealed history target data:
+
+```ts
+import { scoreObjectiveAnchor } from "@jsonbored/gittensory-engine";
+
+const result = scoreObjectiveAnchor({
+  replayed: {
+    paths: ["packages/gittensory-engine/src/opportunity-ranker.ts"],
+    labels: ["feature"],
+    titles: ["feat(miner): add deterministic opportunity ranking"],
+  },
+  revealed: {
+    paths: ["packages/gittensory-engine/src/objective-anchor.ts"],
+    labels: ["feature"],
+    titles: ["feat(miner): add objective-anchor calibration scoring"],
+  },
+});
+```
+
+The returned object includes:
+
+- `score`: a composite value in `[0, 1]`.
+- `dimensions.paths`: exact/tight path overlap.
+- `dimensions.modules`: coarser module overlap, so a replay that targets the right package but the wrong file receives
+  visible partial credit.
+- `dimensions.changeKinds`: overlap between caller-supplied or inferred change classes.
+- `audit`: normalized replayed/revealed feature sets, intersections, misses, and normalized weights.
+
+The default weight split is path-heavy but still gives module-level and kind-level signal:
+
+```ts
+{
+  paths: 0.45,
+  modules: 0.4,
+  changeKinds: 0.15
+}
+```
+
+Custom weights are normalized to sum to `1`. Negative, non-finite, or otherwise invalid weights are treated as `0`;
+if every provided weight is unusable, the defaults are restored.
+
+Feature extraction is intentionally conservative:
+
+- Paths are normalized to lowercase slash paths, deduplicated, and sorted.
+- Modules are derived only from paths, never guessed from free text.
+- Change kinds can come from explicit `changeKinds`, issue/PR labels, titles, notes, and path conventions.
+- If no change-kind signal exists, the kind is `unknown` so an opaque replay and opaque revealed history can still be
+  compared deterministically.
+
+Given the same inputs, `JSON.stringify(scoreObjectiveAnchor(input))` is byte-stable across runs.
+
+Replay harnesses that already represent the two sides as arrays of plans, PRs, or commits can use the history
+helpers instead:
+
+```ts
+import { scoreObjectiveAnchorHistory } from "@jsonbored/gittensory-engine";
+
+const result = scoreObjectiveAnchorHistory({
+  replayed: [
+    {
+      id: "plan:objective-anchor",
+      source: "plan",
+      paths: ["packages/gittensory-engine/src/objective-anchor.ts"],
+      labels: ["feature"],
+    },
+  ],
+  revealed: [
+    {
+      id: "pr:3142",
+      source: "pull_request",
+      paths: ["packages/gittensory-engine/src/objective-anchor.ts"],
+      labels: ["feature"],
+    },
+  ],
+});
+```
+
+`result.history.replayed.items` and `result.history.revealed.items` preserve the per-record normalized features, while
+`result.audit` shows the aggregate intersections and misses used for the score. Empty histories remain valid inputs:
+they produce empty path/module sets and an `unknown` change kind rather than throwing, so a replay batch can record a
+low-information calibration row without special casing.
+
+For local replay artifacts, `renderObjectiveAnchorAuditMarkdown(result)` turns either score shape into a deterministic
+Markdown report. It includes dimensions, weights, normalized feature sets, intersections, misses, and per-item history
+evidence when present. Report values are escaped and collapsed to one line so caller-supplied ids or paths cannot
+reshape the artifact.
+
+## Pairwise calibration
+
+`computePairwiseCalibrationScore()` is the deterministic half of the order-swapped pairwise judge layer. The miner
+runtime owns the model calls; the engine package owns the stable post-processing contract:
+
+- run a judge attempt in both presentation orders,
+- accept only outcomes that agree after inverting the swapped-order verdict,
+- discard `incomparable` and order-flipping attempts,
+- cap retries,
+- track order-instability rate,
+- combine the surviving pairwise average with the objective-anchor score.
+
+```ts
+import { computePairwiseCalibrationScore } from "@jsonbored/gittensory-engine";
+
+const result = computePairwiseCalibrationScore({
+  objectiveAnchor: 0.55,
+  samples: [
+    {
+      attempts: [
+        {
+          replayFirst: "replay_better",
+          revealedFirst: "revealed_better",
+        },
+      ],
+    },
+  ],
+});
+```
+
+If every pairwise sample is unstable, the composite falls back to the objective-anchor score and records the failed
+samples in `metrics` rather than averaging noise into the calibration signal.
+
 ## Plan templates
 
 `plan-templates.ts` exports one builder per miner lifecycle stage (`analyze`, `plan`, `prepare`, `create`, `manage`).

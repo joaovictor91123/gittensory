@@ -9,6 +9,33 @@ export {
   rankOpportunities,
   type OpportunityRankInput,
 } from "./opportunity-ranker.js";
+export {
+  extractObjectiveAnchorHistory,
+  extractObjectiveAnchorFeatures,
+  scoreObjectiveAnchor,
+  scoreObjectiveAnchorHistory,
+  renderObjectiveAnchorAuditMarkdown,
+  type ObjectiveAnchorAudit,
+  type ObjectiveAnchorChangeKind,
+  type ObjectiveAnchorDimensionScores,
+  type ObjectiveAnchorFeatures,
+  type ObjectiveAnchorHistoryExtraction,
+  type ObjectiveAnchorHistoryItem,
+  type ObjectiveAnchorHistoryItemAudit,
+  type ObjectiveAnchorHistoryScore,
+  type ObjectiveAnchorInput,
+  type ObjectiveAnchorScore,
+  type ObjectiveAnchorWeights,
+} from "./objective-anchor.js";
+export {
+  computePairwiseCalibrationScore,
+  resolvePairwiseCalibrationSample,
+  type PairwiseCalibrationAttempt,
+  type PairwiseCalibrationResolvedSample,
+  type PairwiseCalibrationScore,
+  type PairwiseCalibrationVerdict,
+  type PairwiseCalibrationWeights,
+} from "./pairwise-calibration.js";
 export * from "./governor/rate-limit.js";
 export {
   GOVERNOR_LEDGER_EVENT_TYPES,
