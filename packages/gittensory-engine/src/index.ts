@@ -53,6 +53,24 @@ export {
   type GateVerdictCalibrationWeights,
   type GateVerdictCompositeCalibrationScore,
 } from "./gate-verdict-calibration.js";
+export {
+  computeTrackRecordSummary,
+  renderTrackRecordSummaryMarkdown,
+  resolveTrackRecordSummaryConfig,
+  shouldIncludeTrackRecordSummary,
+  type TrackRecordIncidentKind,
+  type TrackRecordIncidentRecord,
+  type TrackRecordIncidentStatus,
+  type TrackRecordMergeRate,
+  type TrackRecordPullRequestOutcome,
+  type TrackRecordPullRequestState,
+  type TrackRecordSummary,
+  type TrackRecordSummaryAudit,
+  type TrackRecordSummaryConfig,
+  type TrackRecordSummaryManifest,
+  type TrackRecordSummaryOutcomeCounts,
+  type TrackRecordTenure,
+} from "./track-record-summary.js";
 export * from "./governor/rate-limit.js";
 export {
   GOVERNOR_LEDGER_EVENT_TYPES,

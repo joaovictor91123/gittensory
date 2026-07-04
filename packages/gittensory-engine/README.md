@@ -244,6 +244,59 @@ rejected because the repo was not opted in, had invalid ids, or exposed no recog
 component scores, effective weights, contributing repos, dimension tables, rejected rows, and a contributing-repo
 summary. All caller-supplied ids and repo names are Markdown-escaped and newline-collapsed before rendering.
 
+## Track-record summary
+
+`computeTrackRecordSummary()` and `renderTrackRecordSummaryMarkdown()` provide a portable first-contact summary for a
+miner identity. The summary is computed client-side from already-public PR outcomes plus public conduct/moderation
+records, then rendered as a short Markdown block for a PR body or first comment.
+
+The feature is default-off and must be enabled explicitly:
+
+```yaml
+miner:
+  trackRecordSummary:
+    enabled: true
+```
+
+The computation only counts resolved PR outcomes attributable to the requested login. Merged PRs contribute to the
+numerator, closed-without-merge PRs contribute to the denominator, and open PRs are reported as ignored so in-flight
+work cannot inflate or deflate the public rate. Tenure is derived from the earliest observed public PR timestamp, and a
+clean conduct line is emitted only when no active public incident record is present for the login.
+
+```ts
+import {
+  computeTrackRecordSummary,
+  renderTrackRecordSummaryMarkdown,
+  resolveTrackRecordSummaryConfig,
+} from "@jsonbored/gittensory-engine";
+
+const config = resolveTrackRecordSummaryConfig({
+  miner: { trackRecordSummary: { enabled: true } },
+});
+
+const summary = computeTrackRecordSummary({
+  login: "octo-miner",
+  config,
+  now: "2026-07-04T18:00:00Z",
+  outcomes: [
+    {
+      repoFullName: "JSONbored/gittensory",
+      authorLogin: "octo-miner",
+      state: "merged",
+      createdAt: "2026-06-01T00:00:00Z",
+      mergedAt: "2026-06-02T00:00:00Z",
+    },
+  ],
+  incidents: [],
+});
+
+const markdown = renderTrackRecordSummaryMarkdown(summary);
+```
+
+The rendered block is intentionally narrow: login, resolved public PR counts, public merge rate, public tenure, conduct
+status, and optional public evidence URLs for active incidents. Caller-provided ids, PR URLs, and arbitrary metadata are
+never copied into the Markdown, and the renderer fails closed if a blocked private-field name is introduced.
+
 ## Plan templates
 
 `plan-templates.ts` exports one builder per miner lifecycle stage (`analyze`, `plan`, `prepare`, `create`, `manage`).
