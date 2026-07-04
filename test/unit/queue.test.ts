@@ -4180,7 +4180,7 @@ describe("queue processors", () => {
 
     // The "first pass" (webhook-shaped) claims the lock for this exact (repo, PR, head, mode) tuple and is still
     // in-flight when the "second pass" (agent-regate-pr sweep-shaped) below reaches runAiReviewForAdvisory.
-    expect(await claimAiReviewLock(env, "JSONbored/gittensory", 49, "a49", "block")).toBe(true);
+    expect((await claimAiReviewLock(env, "JSONbored/gittensory", 49, "a49", "block")).acquired).toBe(true);
 
     await expect(
       processJob(env, {
@@ -4961,19 +4961,20 @@ describe("queue processors", () => {
   it("claimAiReviewLock claims when free, denies when held (per-PR+head+mode, not globally), and release frees it again (#confirmed-bug)", async () => {
     const env = createTestEnv({});
     // First claim for this exact (repo, PR, head, mode) succeeds — no prior pass in-flight.
-    expect(await claimAiReviewLock(env, "owner/agent-repo", 7, "sha1", "block")).toBe(true);
+    const first = await claimAiReviewLock(env, "owner/agent-repo", 7, "sha1", "block");
+    expect(first.acquired).toBe(true);
     // A second, concurrent pass for the SAME PR at the SAME head and mode (regardless of what triggered it —
     // webhook or sweep) is denied while the first is still in-flight — exactly the race this lock exists for.
-    expect(await claimAiReviewLock(env, "owner/agent-repo", 7, "sha1", "block")).toBe(false);
+    expect((await claimAiReviewLock(env, "owner/agent-repo", 7, "sha1", "block")).acquired).toBe(false);
     // A DIFFERENT head SHA for the same PR is unaffected — a new commit is a genuinely new review, not a dup.
-    expect(await claimAiReviewLock(env, "owner/agent-repo", 7, "sha2", "block")).toBe(true);
+    expect((await claimAiReviewLock(env, "owner/agent-repo", 7, "sha2", "block")).acquired).toBe(true);
     // A DIFFERENT mode for the same PR+head is also unaffected — advisory vs block are independent lock keys.
-    expect(await claimAiReviewLock(env, "owner/agent-repo", 7, "sha1", "advisory")).toBe(true);
+    expect((await claimAiReviewLock(env, "owner/agent-repo", 7, "sha1", "advisory")).acquired).toBe(true);
     // A DIFFERENT PR in the same repo is unaffected — the lock is per-PR+head+mode, not repo-wide.
-    expect(await claimAiReviewLock(env, "owner/agent-repo", 8, "sha1", "block")).toBe(true);
+    expect((await claimAiReviewLock(env, "owner/agent-repo", 8, "sha1", "block")).acquired).toBe(true);
     // Release (the finally block's job) frees the (PR, head, mode) tuple — a subsequent pass can claim it again.
-    await releaseAiReviewLock(env, "owner/agent-repo", 7, "sha1", "block");
-    expect(await claimAiReviewLock(env, "owner/agent-repo", 7, "sha1", "block")).toBe(true);
+    await releaseAiReviewLock(env, "owner/agent-repo", 7, "sha1", "block", first.ownerToken);
+    expect((await claimAiReviewLock(env, "owner/agent-repo", 7, "sha1", "block")).acquired).toBe(true);
   });
 
   it("claimAiReviewLock fails OPEN on a broken transient cache — never itself blocks a real review from running (#confirmed-bug)", async () => {
@@ -4984,14 +4985,14 @@ describe("queue processors", () => {
         del: async () => { throw new Error("cache delete error"); },
       },
     });
-    expect(await claimAiReviewLock(env, "owner/agent-repo", 7, "sha1", "block")).toBe(true);
-    await expect(releaseAiReviewLock(env, "owner/agent-repo", 7, "sha1", "block")).resolves.toBeUndefined();
+    expect((await claimAiReviewLock(env, "owner/agent-repo", 7, "sha1", "block")).acquired).toBe(true);
+    await expect(releaseAiReviewLock(env, "owner/agent-repo", 7, "sha1", "block", null)).resolves.toBeUndefined();
   });
 
   it("claimAiReviewLock fails OPEN when no transient cache is configured at all — nothing to serialize against (#confirmed-bug)", async () => {
     const env = createTestEnv({});
     delete env.SELFHOST_TRANSIENT_CACHE;
-    expect(await claimAiReviewLock(env, "owner/agent-repo", 7, "sha1", "block")).toBe(true);
+    expect((await claimAiReviewLock(env, "owner/agent-repo", 7, "sha1", "block")).acquired).toBe(true);
   });
 
   it("claimAiReviewLock fails OPEN when the atomic claim primitive itself throws (#confirmed-bug)", async () => {
@@ -5002,7 +5003,7 @@ describe("queue processors", () => {
         claim: async () => { throw new Error("redis unavailable"); },
       },
     });
-    expect(await claimAiReviewLock(env, "owner/agent-repo", 7, "sha1", "block")).toBe(true);
+    expect((await claimAiReviewLock(env, "owner/agent-repo", 7, "sha1", "block")).acquired).toBe(true);
   });
 
   it("REGRESSION: claimAiReviewLock uses an atomic check-and-set, so two genuinely concurrent claims for the SAME (repo, PR, head, mode) can never both succeed", async () => {
@@ -5017,7 +5018,7 @@ describe("queue processors", () => {
       claimAiReviewLock(env, "owner/agent-repo", 7, "sha1", "block"),
       claimAiReviewLock(env, "owner/agent-repo", 7, "sha1", "block"),
     ]);
-    expect([first, second].filter(Boolean)).toHaveLength(1);
+    expect([first, second].filter((claim) => claim.acquired)).toHaveLength(1);
   });
 
   it("REGRESSION: claimAiReviewLock calls the atomic claim primitive, not a separate get+set pair, when the cache supports it", async () => {
@@ -5029,7 +5030,7 @@ describe("queue processors", () => {
         claim: async () => { calls.push("claim"); return true; },
       },
     });
-    expect(await claimAiReviewLock(env, "owner/agent-repo", 7, "sha1", "block")).toBe(true);
+    expect((await claimAiReviewLock(env, "owner/agent-repo", 7, "sha1", "block")).acquired).toBe(true);
     expect(calls).toEqual(["claim"]); // never falls through to the racy get/set pair when claim is available
   });
 
@@ -5048,8 +5049,8 @@ describe("queue processors", () => {
         set: async (key: string, value: string) => { values.set(key, value); },
       },
     });
-    expect(await claimAiReviewLock(env, "owner/agent-repo", 7, "sha1", "block")).toBe(true);
-    expect(await claimAiReviewLock(env, "owner/agent-repo", 7, "sha1", "block")).toBe(true);
+    expect((await claimAiReviewLock(env, "owner/agent-repo", 7, "sha1", "block")).acquired).toBe(true);
+    expect((await claimAiReviewLock(env, "owner/agent-repo", 7, "sha1", "block")).acquired).toBe(true);
   });
 
   it("REGRESSION (#confirmed-bug, review round 2): claimAiReviewLock does not falsely claim exclusivity for two genuinely concurrent callers when the cache has no claim()", async () => {
@@ -5069,7 +5070,7 @@ describe("queue processors", () => {
       claimAiReviewLock(env, "owner/agent-repo", 7, "sha1", "block"),
       claimAiReviewLock(env, "owner/agent-repo", 7, "sha1", "block"),
     ]);
-    expect([first, second]).toEqual([true, true]);
+    expect([first.acquired, second.acquired]).toEqual([true, true]);
   });
 
   // claimPrActuationLock (#2129/#2135) is the ONE shared per-PR actuation lock: maybeRunAgentMaintenance,
@@ -5077,11 +5078,12 @@ describe("queue processors", () => {
   // three mutating PR paths can race any other (review round 4) — a single namespace, not one lock per path.
   it("claimPrActuationLock claims when free, denies when held (per-PR), and release frees it again (#2135)", async () => {
     const env = createTestEnv({});
-    expect(await claimPrActuationLock(env, "owner/act-repo", 7)).toBe(true);
-    expect(await claimPrActuationLock(env, "owner/act-repo", 7)).toBe(false);
-    expect(await claimPrActuationLock(env, "owner/act-repo", 8)).toBe(true);
-    await releasePrActuationLock(env, "owner/act-repo", 7);
-    expect(await claimPrActuationLock(env, "owner/act-repo", 7)).toBe(true);
+    const first = await claimPrActuationLock(env, "owner/act-repo", 7);
+    expect(first.acquired).toBe(true);
+    expect((await claimPrActuationLock(env, "owner/act-repo", 7)).acquired).toBe(false);
+    expect((await claimPrActuationLock(env, "owner/act-repo", 8)).acquired).toBe(true);
+    await releasePrActuationLock(env, "owner/act-repo", 7, first.ownerToken);
+    expect((await claimPrActuationLock(env, "owner/act-repo", 7)).acquired).toBe(true);
   });
 
   it("claimPrActuationLock fails OPEN on a broken transient cache — never itself blocks actuation (#2135)", async () => {
@@ -5092,8 +5094,8 @@ describe("queue processors", () => {
         del: async () => { throw new Error("cache delete error"); },
       },
     });
-    expect(await claimPrActuationLock(env, "owner/act-repo", 7)).toBe(true);
-    await expect(releasePrActuationLock(env, "owner/act-repo", 7)).resolves.toBeUndefined();
+    expect((await claimPrActuationLock(env, "owner/act-repo", 7)).acquired).toBe(true);
+    await expect(releasePrActuationLock(env, "owner/act-repo", 7, null)).resolves.toBeUndefined();
   });
 
   it("claimPrActuationLock fails OPEN when the atomic claim primitive itself throws (#2135)", async () => {
@@ -5104,7 +5106,7 @@ describe("queue processors", () => {
         claim: async () => { throw new Error("redis unavailable"); },
       },
     });
-    expect(await claimPrActuationLock(env, "owner/act-repo", 7)).toBe(true);
+    expect((await claimPrActuationLock(env, "owner/act-repo", 7)).acquired).toBe(true);
   });
 
   it("REGRESSION (#2135): claimPrActuationLock uses an atomic check-and-set, so two genuinely concurrent claims for the SAME PR can never both succeed", async () => {
@@ -5113,7 +5115,7 @@ describe("queue processors", () => {
       claimPrActuationLock(env, "owner/act-repo", 7),
       claimPrActuationLock(env, "owner/act-repo", 7),
     ]);
-    expect([first, second].filter(Boolean)).toHaveLength(1);
+    expect([first, second].filter((claim) => claim.acquired)).toHaveLength(1);
   });
 
   it("REGRESSION (#2135): claimPrActuationLock calls the atomic claim primitive, not a separate get+set pair, when the cache supports it", async () => {
@@ -5125,7 +5127,7 @@ describe("queue processors", () => {
         claim: async () => { calls.push("claim"); return true; },
       },
     });
-    expect(await claimPrActuationLock(env, "owner/act-repo", 7)).toBe(true);
+    expect((await claimPrActuationLock(env, "owner/act-repo", 7)).acquired).toBe(true);
     expect(calls).toEqual(["claim"]); // never falls through to the racy get/set pair when claim is available
   });
 
@@ -5139,8 +5141,8 @@ describe("queue processors", () => {
         set: async (key: string, value: string) => { values.set(key, value); },
       },
     });
-    expect(await claimPrActuationLock(env, "owner/act-repo", 7)).toBe(true);
-    expect(await claimPrActuationLock(env, "owner/act-repo", 7)).toBe(true);
+    expect((await claimPrActuationLock(env, "owner/act-repo", 7)).acquired).toBe(true);
+    expect((await claimPrActuationLock(env, "owner/act-repo", 7)).acquired).toBe(true);
   });
 
   it("REGRESSION (#2135, review round 2): claimPrActuationLock does not falsely claim exclusivity for two genuinely concurrent callers when the cache has no claim()", async () => {
@@ -5156,7 +5158,53 @@ describe("queue processors", () => {
       claimPrActuationLock(env, "owner/act-repo", 7),
       claimPrActuationLock(env, "owner/act-repo", 7),
     ]);
-    expect([first, second]).toEqual([true, true]);
+    expect([first.acquired, second.acquired]).toEqual([true, true]);
+  });
+
+  it("REGRESSION (#2129/#2135): a stale actuation-lock holder's release does not delete a successor's live lock", async () => {
+    // The exact race the ownership-token scheme exists to close: holder A's claim TTL lapses (or its finally
+    // block simply runs late), a NEW holder B claims the same key in the meantime, and then A's release finally
+    // runs. A blind del() would delete B's still-live lock; releaseIfValue only deletes when the caller's OWN
+    // token still matches what's stored, so A's late release is a safe no-op against B's key.
+    const env = createTestEnv({});
+    const staleHolder = await claimPrActuationLock(env, "owner/act-repo", 7);
+    expect(staleHolder.acquired).toBe(true);
+    expect(staleHolder.ownerToken).toBeTruthy();
+    // Simulate B's claim landing in the same key slot after A's token would have expired.
+    await env.SELFHOST_TRANSIENT_CACHE!.set!("pr-actuation-lock:owner/act-repo#7", "successor-token", 600);
+    await releasePrActuationLock(env, "owner/act-repo", 7, staleHolder.ownerToken);
+    expect(await env.SELFHOST_TRANSIENT_CACHE!.get!("pr-actuation-lock:owner/act-repo#7")).toBe("successor-token");
+    // B's own release, with the matching token, does free the key.
+    await releasePrActuationLock(env, "owner/act-repo", 7, "successor-token");
+    expect(await env.SELFHOST_TRANSIENT_CACHE!.get!("pr-actuation-lock:owner/act-repo#7")).toBeNull();
+  });
+
+  it("releaseAiReviewLock and releasePrActuationLock are no-ops when ownerToken is null (nothing was actually claimed)", async () => {
+    const env = createTestEnv({});
+    const calls: string[] = [];
+    env.SELFHOST_TRANSIENT_CACHE = {
+      get: async () => null,
+      set: async () => undefined,
+      releaseIfValue: async () => { calls.push("releaseIfValue"); return true; },
+    };
+    await releasePrActuationLock(env, "owner/act-repo", 7, null);
+    await releaseAiReviewLock(env, "owner/agent-repo", 7, "sha1", "block", null);
+    expect(calls).toEqual([]); // a null token means nothing was claimed, so release must never touch the cache
+  });
+
+  it("release skips the cache entirely (relies on TTL) when the cache has no releaseIfValue()", async () => {
+    const calls: string[] = [];
+    const env = createTestEnv({
+      SELFHOST_TRANSIENT_CACHE: {
+        get: async () => null,
+        set: async () => undefined,
+        claim: async (key: string) => { calls.push(`claim:${key}`); return true; },
+      },
+    });
+    const claim = await claimPrActuationLock(env, "owner/act-repo", 7);
+    expect(claim.acquired).toBe(true);
+    await releasePrActuationLock(env, "owner/act-repo", 7, claim.ownerToken);
+    expect(calls).toEqual(["claim:pr-actuation-lock:owner/act-repo#7"]); // release never called releaseIfValue — it doesn't exist on this cache
   });
 
   it("INVARIANT (#2129 per-PR lock): a maintenance pass defers when another pass already holds the PR's lock", async () => {
