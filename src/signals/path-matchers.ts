@@ -208,6 +208,14 @@ const CONFIG_FILE_NAMES: ReadonlySet<string> = new Set([
   ".gitignore",
   ".gitattributes",
   ".dockerignore",
+  // Further tool ignore-files, siblings to .gitignore/.dockerignore above. (The
+  // .eslintignore/.prettierignore variants are already covered by the .eslint/
+  // .prettier prefixes.)
+  ".npmignore",
+  ".stylelintignore",
+  ".vercelignore",
+  ".helmignore",
+  ".gcloudignore",
   // Dependency automation and local toolchain version pins.
   "renovate.json",
   "dependabot.yml",

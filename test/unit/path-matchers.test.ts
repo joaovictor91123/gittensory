@@ -241,6 +241,11 @@ describe("isConfigFile", () => {
       "packages/app/.gitignore",
       ".gitattributes",
       "services/api/.dockerignore",
+      ".npmignore",
+      "libs/ui/.stylelintignore",
+      ".vercelignore",
+      "charts/app/.helmignore",
+      ".gcloudignore",
     ]) {
       expect(isConfigFile(path)).toBe(true);
     }
