@@ -880,7 +880,7 @@ describe("agent approval queue (#779)", () => {
     expect((await decidePendingAgentAction(env, { id: "nope", decision: "accept", decidedBy: "owner" })).status).toBe("not_found");
   });
 
-  it("accept records error when the staged action cannot execute (no write permission)", async () => {
+  it("REGRESSION: accept audits 'denied' (not 'error') when the staged action cleanly declines to run (no write permission)", async () => {
     const env = createTestEnv({});
     // No settings/installation seeded → autonomy is empty + no pull_requests:write → the merge is denied.
     const { action } = await createPendingAgentActionIfAbsent(env, { repoFullName: "owner/repo", pullNumber: 7, installationId: 5, actionClass: "merge", autonomyLevel: "auto_with_approval", params: { mergeMethod: "squash", expectedHeadSha: "h7" }, reason: "clean" });
@@ -888,7 +888,24 @@ describe("agent approval queue (#779)", () => {
     expect(result.status).toBe("accepted"); // the decision is recorded...
     expect(result.executionOutcome).toBe("denied"); // ...but the action could not run
     expect(mergePullRequest).not.toHaveBeenCalled();
-    expect((await env.DB.prepare("select outcome from audit_events where event_type = ?").bind("agent.pending_action.accepted").first<{ outcome: string }>())?.outcome).toBe("error");
+    // A "denied" execution outcome is an intentional policy decision, not a failure -- the audit row must say
+    // so, not collapse it into "error" alongside a genuine executor exception (see the #2423 regression below).
+    expect((await env.DB.prepare("select outcome from audit_events where event_type = ?").bind("agent.pending_action.accepted").first<{ outcome: string }>())?.outcome).toBe("denied");
+  });
+
+  it("REGRESSION: accept audits 'completed' (not 'error') when the executor runs in dry-run mode", async () => {
+    const env = createTestEnv({ GITHUB_APP_PRIVATE_KEY: "x" });
+    await upsertRepositorySettings(env, { repoFullName: "owner/repo", autonomy: { merge: "auto_with_approval" }, agentDryRun: true });
+    await seedInstallation(env);
+    await upsertPullRequestFromGitHub(env, "owner/repo", { number: 7, title: "PR", state: "open", user: { login: "contributor" }, head: { sha: "h7" }, labels: [], body: "x" });
+    const { action } = await createPendingAgentActionIfAbsent(env, { repoFullName: "owner/repo", pullNumber: 7, installationId: 5, actionClass: "merge", autonomyLevel: "auto_with_approval", params: { mergeMethod: "squash", expectedHeadSha: "h7" }, reason: "clean" });
+    const result = await decidePendingAgentAction(env, { id: action.id, decision: "accept", decidedBy: "owner" });
+    expect(result.status).toBe("accepted");
+    expect(result.executionOutcome).toBe("dry_run");
+    expect(mergePullRequest).not.toHaveBeenCalled();
+    // AuditEventRecord's outcome type has no "dry_run" member -- it must fold into "completed" (mirroring
+    // agent-action-executor.ts's own audit() helper), not the unrelated "error" outcome.
+    expect((await env.DB.prepare("select outcome from audit_events where event_type = ?").bind("agent.pending_action.accepted").first<{ outcome: string }>())?.outcome).toBe("completed");
   });
 
   it("REGRESSION (#2423): accept persists status=errored, not accepted, when the executor's mutation call throws", async () => {

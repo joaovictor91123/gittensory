@@ -315,7 +315,12 @@ export async function decidePendingAgentAction(env: Env, input: { id: string; de
     eventType: "agent.pending_action.accepted",
     actor: input.decidedBy,
     targetKey,
-    outcome: execOutcome === "completed" ? "completed" : "error",
+    // The audit outcome must reflect execOutcome the same way finalStatus's comment above describes it, not
+    // collapse every non-"completed" result into "error": "denied"/"queued" pass through as themselves, and
+    // "dry_run" folds into "completed" (mirroring agent-action-executor.ts's own audit() helper), since
+    // AuditEventRecord's outcome type has no "dry_run" member. Only a real executor failure — "error", or the
+    // defensive "no_outcome" fallback above — should ever surface as "error" here.
+    outcome: execOutcome === "dry_run" ? "completed" : execOutcome === "denied" || execOutcome === "queued" ? execOutcome : execOutcome === "completed" ? "completed" : "error",
     detail: `accepted ${pending.actionClass} → ${execOutcome}`,
     metadata: { ...baseMetadata, executionOutcome: execOutcome },
   });
