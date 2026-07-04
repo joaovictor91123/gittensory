@@ -1812,6 +1812,24 @@ NOVELTY_BONUS_SCALAR = 3
       expect(calculateTimeDecay(13.5, c, { gracePeriodHours: 13.9 })).toBeLessThan(1);
     });
 
+    it("clamps an out-of-band grace_period_hours override to the documented [0, 168] range", () => {
+      const c = DEFAULT_SCORING_CONSTANTS;
+      // Negative override clamps to 0 rather than applying verbatim.
+      expect(resolveTimeDecay(c, { gracePeriodHours: -10 }).gracePeriodHours).toBe(0);
+      // An override beyond the documented week-long ceiling clamps to 168.
+      expect(resolveTimeDecay(c, { gracePeriodHours: 500 }).gracePeriodHours).toBe(168);
+    });
+
+    it("clamps an out-of-band minMultiplier override to the sigmoid's own [0, 1] floor range", () => {
+      const c = DEFAULT_SCORING_CONSTANTS;
+      expect(resolveTimeDecay(c, { minMultiplier: -0.5 }).minMultiplier).toBe(0);
+      expect(resolveTimeDecay(c, { minMultiplier: 1.5 }).minMultiplier).toBe(1);
+      // Before the fix, an override above 1 floored every aged PR ABOVE a fresh PR's 1.0 multiplier,
+      // inverting decay into an age bonus. After the fix the floor caps at 1, so a very old PR decays
+      // down to at most the fresh multiplier -- never above it.
+      expect(calculateTimeDecay(2400, c, { minMultiplier: 1.5 })).toBe(1);
+    });
+
     it("applies each live repo's resolved curve in the preview (per-repo, not global)", () => {
       const input: ScorePreviewInput = { repoFullName: repo.fullName, sourceTokenScore: 58, totalTokenScore: 600, sourceLines: 60, openPrCount: 0, credibility: 1, applyTimeDecay: true, prAgeHours: 18 };
       // Repo with a 24h grace override (like JSONbored/gittensory) → an 18h-old PR is still fresh.

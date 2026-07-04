@@ -1327,11 +1327,32 @@ export function resolveTimeDecay(
   overrides?: RepoTimeDecayOverrides | null,
 ): { gracePeriodHours: number; sigmoidMidpointDays: number; sigmoidSteepness: number; minMultiplier: number } {
   return {
-    gracePeriodHours: Math.trunc(pickOverride(overrides?.gracePeriodHours, constant(constants, "TIME_DECAY_GRACE_PERIOD_HOURS"))),
+    gracePeriodHours: clampGracePeriodHours(Math.trunc(pickOverride(overrides?.gracePeriodHours, constant(constants, "TIME_DECAY_GRACE_PERIOD_HOURS")))),
     sigmoidMidpointDays: pickOverride(overrides?.sigmoidMidpointDays, constant(constants, "TIME_DECAY_SIGMOID_MIDPOINT")),
     sigmoidSteepness: pickOverride(overrides?.sigmoidSteepness, constant(constants, "TIME_DECAY_SIGMOID_STEEPNESS_SCALAR")),
-    minMultiplier: pickOverride(overrides?.minMultiplier, constant(constants, "TIME_DECAY_MIN_MULTIPLIER")),
+    minMultiplier: clampMinMultiplier(pickOverride(overrides?.minMultiplier, constant(constants, "TIME_DECAY_MIN_MULTIPLIER"))),
   };
+}
+
+// Documented bound (see the parity note above): upstream validates 0 <= grace_period_hours <= 168. The
+// override reaches this resolver via a bare Number.isFinite check (registry/normalize.ts's parseTimeDecayOverrides),
+// so an out-of-band value (negative, or beyond a week) would otherwise apply verbatim.
+const GRACE_PERIOD_HOURS_MIN = 0;
+const GRACE_PERIOD_HOURS_MAX = 168;
+
+function clampGracePeriodHours(value: number): number {
+  return clamp(value, GRACE_PERIOD_HOURS_MIN, GRACE_PERIOD_HOURS_MAX);
+}
+
+// minMultiplier is the sigmoid's floor (calculateTimeDecay: Math.max(sigmoid, minMultiplier)), and the
+// sigmoid itself is always in (0, 1). A per-repo override above 1 would floor every aged PR ABOVE a fresh
+// PR's multiplier -- inverting time decay into an age bonus -- and a negative override applied verbatim
+// today has no floor semantics at all. Bound to the sigmoid's own range so the floor invariant always holds.
+const MIN_MULTIPLIER_MIN = 0;
+const MIN_MULTIPLIER_MAX = 1;
+
+function clampMinMultiplier(value: number): number {
+  return clamp(value, MIN_MULTIPLIER_MIN, MIN_MULTIPLIER_MAX);
 }
 
 function pickOverride(value: number | null | undefined, fallback: number): number {
