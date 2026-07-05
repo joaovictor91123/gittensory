@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { backupAcknowledgedGaugeValue } from "../../src/selfhost/health";
-import { gauge, gaugeVector, incr, observe, registerMetricMeta, renderMetrics, resetMetrics, setSelfHostedMetricsMode } from "../../src/selfhost/metrics";
+import { counterValue, gauge, gaugeVector, hitRatio, incr, observe, registerMetricMeta, renderMetrics, resetMetrics, setSelfHostedMetricsMode } from "../../src/selfhost/metrics";
 
 afterEach(() => {
   resetMetrics();
@@ -302,5 +302,27 @@ describe("histograms (observe)", () => {
     observe("z_seconds", 1);
     resetMetrics();
     expect(await renderMetrics()).toBe("\n");
+  });
+});
+
+describe("hitRatio (#2090)", () => {
+  afterEach(() => resetMetrics());
+
+  it("returns hits / (hits + misses) for normal samples", () => {
+    expect(hitRatio(3, 1)).toBe(0.75);
+    expect(hitRatio(5, 0)).toBe(1);
+    expect(hitRatio(0, 5)).toBe(0);
+  });
+
+  it("returns 0 when there are no samples yet (divide-by-zero guard)", () => {
+    expect(hitRatio(0, 0)).toBe(0);
+  });
+
+  it("counterValue reads labeled counter totals and defaults missing series to 0", () => {
+    incr("gittensory_redis_gh_response_cache_total", { result: "hit" }, 4);
+    incr("gittensory_redis_gh_response_cache_total", { result: "miss" }, 1);
+    expect(counterValue("gittensory_redis_gh_response_cache_total", { result: "hit" })).toBe(4);
+    expect(counterValue("gittensory_redis_gh_response_cache_total", { result: "miss" })).toBe(1);
+    expect(counterValue("gittensory_redis_gh_response_cache_total", { result: "set" })).toBe(0);
   });
 });

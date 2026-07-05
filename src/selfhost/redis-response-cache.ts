@@ -9,10 +9,19 @@
 // per-class TTL env var before calling set(), so set() takes the TTL as a required argument (#2505).
 import type { Redis } from "ioredis";
 import type { CachedGitHubResponse, GitHubResponseCache } from "../github/client";
-import { incr } from "./metrics";
+import { counterValue, gauge, hitRatio, incr } from "./metrics";
 
 const REDIS_GITHUB_RESPONSE_CACHE_METRIC = "gittensory_redis_gh_response_cache_total";
 const keyFor = (key: string): string => `gh:resp:${key}`;
+
+function registerRedisResponseCacheHitRatioGauge(): void {
+  gauge("gittensory_redis_gh_response_cache_hit_ratio", () =>
+    hitRatio(
+      counterValue(REDIS_GITHUB_RESPONSE_CACHE_METRIC, { result: "hit" }),
+      counterValue(REDIS_GITHUB_RESPONSE_CACHE_METRIC, { result: "miss" }),
+    ),
+  );
+}
 
 function isReplayableCachedStatus(status: unknown): status is number {
   return status === 200 || status === 403 || status === 404;
@@ -23,6 +32,7 @@ function recordRedisResponseCacheMetric(result: "hit" | "miss" | "set" | "error"
 }
 
 export function createRedisResponseCache(redis: Redis): GitHubResponseCache {
+  registerRedisResponseCacheHitRatioGauge();
   return {
     async get(key: string) {
       let raw: string | null;

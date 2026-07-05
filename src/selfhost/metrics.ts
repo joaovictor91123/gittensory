@@ -91,6 +91,7 @@ const DEFAULT_METRIC_META: readonly (readonly [string, MetricMeta])[] = [
   ["gittensory_github_rest_rate_limit_observations_total", { help: "Observed GitHub REST rate-limit remaining buckets.", type: "counter" }],
   ["gittensory_github_rest_rate_limit_responses_total", { help: "Observed GitHub REST rate-limit response statuses.", type: "counter" }],
   ["gittensory_redis_gh_response_cache_total", { help: "Redis-backed GitHub response cache outcomes.", type: "counter" }],
+  ["gittensory_redis_gh_response_cache_hit_ratio", { help: "Redis GitHub response cache hit ratio (hits / (hits + misses)) at scrape time.", type: "gauge" }],
   ["gittensory_redis_token_cache_total", { help: "Redis-backed GitHub token cache outcomes.", type: "counter" }],
   ["gittensory_qdrant_queries_total", { help: "Qdrant vector query attempts.", type: "counter" }],
   ["gittensory_qdrant_upserts_total", { help: "Qdrant vector upserted item count.", type: "counter" }],
@@ -206,6 +207,20 @@ export function registerMetricMeta(name: string, meta: MetricMeta): void {
 export function incr(name: string, labels?: Labels, by = 1): void {
   const k = seriesKey(name, publicLabelsForMetric(name, labels));
   counters.set(k, (counters.get(k) ?? 0) + by);
+}
+
+/** Read a counter's current value (0 when the series has never been incremented). */
+export function counterValue(name: string, labels?: Labels): number {
+  const k = seriesKey(name, publicLabelsForMetric(name, labels));
+  const value = counters.get(k);
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+/** Hit ratio for cache tuning dashboards — 0 when there are no hit or miss samples yet. */
+export function hitRatio(hits: number, misses: number): number {
+  const total = hits + misses;
+  if (total <= 0 || !Number.isFinite(total)) return 0;
+  return hits / total;
 }
 
 /** Register a gauge sampled at scrape time (sync or async). Re-registering replaces the sampler. */

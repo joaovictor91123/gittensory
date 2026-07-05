@@ -1,6 +1,6 @@
 import type { Redis } from "ioredis";
 import { afterEach, describe, expect, it } from "vitest";
-import { renderMetrics, resetMetrics } from "../../src/selfhost/metrics";
+import { counterValue, incr, renderMetrics, resetMetrics } from "../../src/selfhost/metrics";
 import { createRedisResponseCache } from "../../src/selfhost/redis-response-cache";
 
 function fakeRedis(): {
@@ -246,5 +246,12 @@ describe("createRedisResponseCache (#perf GitHub GET cache)", () => {
     expect(await renderMetrics()).toContain(
       'gittensory_redis_gh_response_cache_total{result="error"} 1',
     );
+  });
+
+  it("registers a scrape-time hit-ratio gauge when the cache is constructed (#2090)", async () => {
+    incr("gittensory_redis_gh_response_cache_total", { result: "hit" }, 3);
+    incr("gittensory_redis_gh_response_cache_total", { result: "miss" }, 1);
+    createRedisResponseCache(fakeRedis().redis);
+    expect(await renderMetrics()).toContain("gittensory_redis_gh_response_cache_hit_ratio 0.75");
   });
 });
