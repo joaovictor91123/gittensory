@@ -496,6 +496,13 @@ export interface SizeSmellFinding {
   name?: string;
 }
 
+/** A user-facing string literal added without the repo's i18n convention (#2029, part of #1499).
+ *  Reports file and line only — never string content. */
+export interface I18nFinding {
+  file: string;
+  line: number;
+}
+
 /** A swallowed-error catch/except block newly added in the diff (#2014, part of #1499).
  *  Reports file, line, and kind only — never catch body content. */
 export interface ErrorSwallowFinding {
@@ -581,6 +588,7 @@ export interface BriefFindings {
   floatingPromise?: FloatingPromiseFinding[];
   deepNesting?: DeepNestingFinding[];
   errorSwallow?: ErrorSwallowFinding[];
+  i18n?: I18nFinding[];
   hardcodedUrl?: HardcodedUrlFinding[];
   commitLint?: CommitLintFinding[];
 }
