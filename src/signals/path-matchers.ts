@@ -52,15 +52,17 @@ function isGeneratedFileFrom(parts: NormalizedPath): boolean {
     /\.(generated|gen)\.[^/]+$/.test(norm) ||
     // protoc output: Go/TS/JS plugins emit `.pb.{go,ts,js}`, the reference C++ plugin emits
     // `.pb.cc` / `.pb.h`, the Swift plugin emits `.pb.swift`, the Dart plugin emits `.pb.dart`,
-    // the Kotlin plugin emits `.pb.kt`, the C# plugin emits `.pb.cs`, and the Objective-C plugin
-    // emits `.pbobjc.{h,m}` plus gRPC `.pbrpc.{h,m}` service stubs.
+    // the Kotlin plugin emits `.pb.kt`, the C# plugin emits `.pb.cs`, the Rust plugin emits `.pb.rs`,
+    // and the Objective-C plugin emits `.pbobjc.{h,m}` plus gRPC `.pbrpc.{h,m}` service stubs.
     // `.pb.dart`/`.pb.kt`/`.pb.cs` (the `.pb` infix keeps hand-written sources from matching).
-    /\.pb\.(go|ts|js|cc|h|swift|dart|kt|cs)$/.test(norm) ||
+    /\.pb\.(go|ts|js|cc|h|swift|dart|kt|cs|rs)$/.test(norm) ||
     /\.pbobjc\.(h|m)$/.test(norm) ||
     /\.pbrpc\.(h|m)$/.test(norm) ||
     // Python protobuf: message stubs are `*_pb2.py[i]`; the gRPC plugin emits sibling
     // `*_pb2_grpc.py[i]` service stubs, which are the same machine-generated output.
     /_pb2(_grpc)?\.pyi?$/.test(norm) ||
+    // Ruby protobuf: message stubs are `*_pb.rb`; the gRPC plugin emits sibling `*_services_pb.rb`.
+    /_pb\.rb$/.test(norm) ||
     // Dart codegen: build_runner (`.g.dart`), freezed (`.freezed.dart`), and
     // retrofit/injectable (`.gr.dart`) all emit generated part files.
     /\.(g|freezed|gr)\.dart$/.test(norm) ||

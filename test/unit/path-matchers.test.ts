@@ -77,6 +77,15 @@ describe("isGeneratedFile", () => {
     }
   });
 
+  it("matches Ruby protobuf and gRPC stubs alongside the other protoc plugins", () => {
+    for (const path of ["gen/service_pb.rb", "gen/service_services_pb.rb", "proto/messages.pb.rs"]) {
+      expect(isGeneratedFile(path)).toBe(true);
+    }
+    for (const path of ["lib/service.rb", "src/main.rs"]) {
+      expect(isGeneratedFile(path)).toBe(false);
+    }
+  });
+
   it("matches Swift protobuf, Dart freezed/retrofit, C# designer/XAML, and Objective-C protoc output", () => {
     for (const path of [
       "proto/messages.pb.swift",
