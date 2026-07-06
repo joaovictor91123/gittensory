@@ -24,6 +24,39 @@ describe("review.auto_review wiring (#1954)", () => {
     ).toBeNull();
   });
 
+  it("resolvePullRequestAutoReviewSkipReason: skips when a configured label is present", () => {
+    const manifest = parseFocusManifest({ review: { auto_review: { skip_labels: ["do-not-review"] } } });
+    expect(
+      resolvePullRequestAutoReviewSkipReason({
+        manifest,
+        isDraft: false,
+        author: "alice",
+        title: "feat: thing",
+        labels: ["Do-Not-Review"],
+        baseRef: "main",
+      }),
+    ).toBe("review skipped (label)");
+    expect(
+      resolvePullRequestAutoReviewSkipReason({
+        manifest,
+        isDraft: false,
+        author: "alice",
+        title: "feat: thing",
+        labels: ["feature"],
+        baseRef: "main",
+      }),
+    ).toBeNull();
+    expect(
+      resolvePullRequestAutoReviewSkipReason({
+        manifest,
+        isDraft: false,
+        author: "alice",
+        title: "feat: thing",
+        baseRef: "main",
+      }),
+    ).toBeNull();
+  });
+
   it("resolvePullRequestAutoReviewSkipReason: matches the documented *[bot] author glob", () => {
     const manifest = parseFocusManifest({ review: { auto_review: { ignore_authors: ["*[bot]"] } } });
     expect(
@@ -108,13 +141,27 @@ describe("review.auto_review wiring (#1954)", () => {
         authorBlacklisted: false,
         isFrozenForManualReview: false,
         repoFullName: "acme/widgets",
-        pr: { number: 3, title: "WIP", baseRef: "main", isDraft: true },
+        pr: { number: 3, title: "WIP", baseRef: "main", isDraft: true, labels: [] },
         author: "alice",
         deliveryId: "d3",
         headSha: "sha3",
       }),
     ).resolves.toEqual({ skipReason: "review skipped (draft)", reviewManifest: manifest });
     expect(auditSpy).toHaveBeenCalled();
+
+    const labelManifest = parseFocusManifest({ review: { auto_review: { skip_labels: ["do-not-review"] } } });
+    loadSpy.mockResolvedValueOnce(labelManifest);
+    await expect(
+      resolveAutoReviewSkipForPullRequest({} as Env, {
+        authorBlacklisted: false,
+        isFrozenForManualReview: false,
+        repoFullName: "acme/widgets",
+        pr: { number: 6, title: "feat", baseRef: "main", isDraft: false, labels: ["Do-Not-Review"] },
+        author: "alice",
+        deliveryId: "d6",
+        headSha: "sha6",
+      }),
+    ).resolves.toEqual({ skipReason: "review skipped (label)", reviewManifest: labelManifest });
 
     loadSpy.mockRejectedValueOnce(new Error("manifest unavailable"));
     await expect(
@@ -128,6 +175,19 @@ describe("review.auto_review wiring (#1954)", () => {
         headSha: "sha4",
       }),
     ).resolves.toEqual({ skipReason: null, reviewManifest: null });
+
+    loadSpy.mockResolvedValueOnce(labelManifest);
+    await expect(
+      resolveAutoReviewSkipForPullRequest({} as Env, {
+        authorBlacklisted: false,
+        isFrozenForManualReview: false,
+        repoFullName: "acme/widgets",
+        pr: { number: 7, title: "feat", baseRef: "main", isDraft: false },
+        author: "alice",
+        deliveryId: "d7",
+        headSha: "sha7",
+      }),
+    ).resolves.toEqual({ skipReason: null, reviewManifest: labelManifest });
 
     loadSpy.mockRestore();
   });
