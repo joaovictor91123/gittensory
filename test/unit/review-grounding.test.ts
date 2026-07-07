@@ -174,18 +174,34 @@ describe("review-grounding: fetchFullFileContents (injected FileFetcher, fail-sa
         ["assets/icon.heic"],
         ["dist/pkg.tgz"],
         ["old.ts", "removed"],
-        ["src/new.ts", "added"],
       ),
       fetcher,
     );
     expect(out).toBeDefined();
-    // source (priority 0) before docs (priority 2); binary + removed + added excluded before fetch
+    // source (priority 0) before docs (priority 2); binary + removed excluded before fetch
     expect(out?.map((f) => f.path)).toEqual(["src/a.ts", "README.md"]);
     expect(reads).toEqual(["src/a.ts", "README.md"]);
-    // #3897: an ADDED file's entire body is already every `+` line of the diff -- fetching it again
-    // would duplicate that content in the prompt, so it's excluded the same way "removed" is.
-    expect(reads).not.toContain("src/new.ts");
     for (const path of binary) expect(reads).not.toContain(path);
+  });
+
+  it("fetches added files because the bounded diff may omit their content", async () => {
+    const reads: string[] = [];
+    const fetcher: FileFetcher = {
+      getFileContent: async (path) => {
+        reads.push(path);
+        return path === "src/new.ts" ? "export const hidden = true;" : null;
+      },
+    };
+
+    const out = await fetchFullFileContents(
+      { ciGrounding: false, fullFileContext: true },
+      "sha",
+      files(["src/new.ts", "added"]),
+      fetcher,
+    );
+
+    expect(reads).toEqual(["src/new.ts"]);
+    expect(out).toEqual([{ path: "src/new.ts", text: "export const hidden = true;" }]);
   });
 
   it("degrades to skipping a file when the fetcher throws (never throws itself)", async () => {
@@ -254,6 +270,33 @@ describe("review-grounding: fetchFullFileContents (injected FileFetcher, fail-sa
     const dEntry = out?.find((f) => f.path === "src/d.ts");
     expect(dEntry).toEqual({ path: "src/d.ts", text: "", truncated: true });
     // The over-budget file is NOT fetched — the budget guard short-circuits before the read.
+    expect(reads).not.toContain("src/d.ts");
+  });
+
+  it("stays budget-bounded when EVERY file in the PR is newly added (no longer excluded from fetch)", async () => {
+    // Same budget-exhaustion shape as the test above, but every file carries status "added" -- proving
+    // that restoring added-file fetching doesn't bypass the shared FILE_CONTENT_BUDGET when a PR adds
+    // several large new files at once: the budget guard still trips per-file, not per-status.
+    const chunk = "z".repeat(20_000); // < MAX_SINGLE_FILE so each is individually inlinable
+    const map: Record<string, string> = { "src/a.ts": chunk, "src/b.ts": chunk, "src/c.ts": chunk, "src/d.ts": chunk };
+    const reads: string[] = [];
+    const fetcher: FileFetcher = {
+      getFileContent: async (path) => {
+        reads.push(path);
+        return map[path] ?? null;
+      },
+    };
+    const out = await fetchFullFileContents(
+      { ciGrounding: false, fullFileContext: true },
+      "sha",
+      files(["src/a.ts", "added"], ["src/b.ts", "added"], ["src/c.ts", "added"], ["src/d.ts", "added"]),
+      fetcher,
+    );
+    expect(out).toBeDefined();
+    // First three fill the 60k budget exactly; the fourth trips the guard before it is fetched.
+    expect(out?.filter((f) => !f.truncated).map((f) => f.path)).toEqual(["src/a.ts", "src/b.ts", "src/c.ts"]);
+    const dEntry = out?.find((f) => f.path === "src/d.ts");
+    expect(dEntry).toEqual({ path: "src/d.ts", text: "", truncated: true });
     expect(reads).not.toContain("src/d.ts");
   });
 });
