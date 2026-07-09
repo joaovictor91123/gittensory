@@ -294,6 +294,14 @@ export {
 // Issue-centric RAG query composition (#2320, extracted in #4254): the pure query builder + the shared
 // minimum-query floor; the Vectorize/D1 retrieval backend intentionally stays in the backend.
 export { MIN_QUERY_CHARS, buildIssueRagQuery, type IssueRagQueryInput } from "./issue-rag-query.js";
+// #782 deterministic local scorer (extracted in #4253): pure token-scoring from changed-file metadata,
+// shared by the published CLIs and the hosted Worker. The Node-coupled local-branch.ts stays in the backend.
+export {
+  computeLocalScorerTokens,
+  type LocalScorerChangedFile,
+  type LocalScorerValidation,
+  type LocalScorerResult,
+} from "./local-scorer.js";
 export {
   buildPredictedGateVerdict,
   predictedGateNote,
