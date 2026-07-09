@@ -187,6 +187,10 @@ export async function runMaintainerRecapJob(
     }
   }
   const result = await runMaintainerRecap(env, { windowDays: resolvedWindowDays, repos });
+  // unreachable implicit-else: runMaintainerRecap only returns skipped:true when explicitly passed
+  // `enabled: false`, which this call site never does -- the enable/disable decision already happened
+  // before runMaintainerRecapJob was ever invoked (isRecapEnabled, checked by the cron and the processor).
+  /* v8 ignore else */
   if (!result.skipped) {
     await recordAuditEvent(env, {
       eventType: "maintainer_recap_generated",
