@@ -36,6 +36,12 @@ The package also includes an append-only event ledger: `initEventLedger` / `appe
 immutable miner-loop events in local SQLite for contributor audit. Insert-only — rows are never updated or
 deleted. (#2322)
 
+The package also records local PR outcomes: `recordPrOutcomeSnapshot` / `readPrOutcomes` write and reduce the
+miner's OWN record of the outcomes of its OWN PRs (merged / closed, with an optional rejection-reason bucket) over
+the append-only event ledger above. This is DISTINCT from the gittensory server's `recordPrOutcome`
+(`src/review/outcomes-wire.ts`), which writes hosted-backend audit rows from the GitHub App's webhook stream — same
+concept name, different codebase layer, no shared code (a laptop-mode miner may have no webhook relay at all). (#4274)
+
 The package also includes an append-only prediction ledger: `initPredictionLedger` / `appendPrediction` /
 `readPredictions` persist each predicted-gate verdict (conclusion / pack / readiness score + blocker/warning
 codes, plus the producing `ENGINE_VERSION`) in local SQLite, so a later self-improve pass can score predictions
