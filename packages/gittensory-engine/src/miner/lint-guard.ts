@@ -30,8 +30,6 @@ export function classifyLintGuardPackage(path: string): LintGuardPackage {
   return "root";
 }
 
-export type LintGuardSpawnResult = { ok: boolean; output: string };
-
 /** Injected process runner -- real IO lives here, not in `guardChangedFiles`, so tests never spawn a real
  *  subprocess. `ok` is derived from the exit code by the caller of this function, not by this type. */
 export type LintGuardSpawnFn = (

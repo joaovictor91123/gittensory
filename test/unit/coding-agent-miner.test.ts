@@ -363,6 +363,45 @@ describe("coding-agent driver factory (#4289)", () => {
     expect(paused.mode).toBe("paused");
     expect(fake.lastTask).toBeNull();
   });
+
+  it("runCodingAgentAttempt is unaffected when lintGuard is omitted (backward compatible)", async () => {
+    const fake = createFakeCodingAgentDriver({
+      run: async () => ({ ok: true, changedFiles: ["a.ts"], summary: "did it", turnsUsed: 1 }),
+    });
+    const live = await runCodingAgentAttempt({ providerName: "noop", task, driver: fake });
+    expect(live.result.ok).toBe(true);
+    expect(live.result.lintGuard).toBeUndefined();
+  });
+
+  it("runCodingAgentAttempt runs the supplied lint guard on the driver's changed files, downgrading ok on failure", async () => {
+    const fake = createFakeCodingAgentDriver({
+      run: async () => ({ ok: true, changedFiles: ["src/review/ops-wire.ts"], summary: "did it", turnsUsed: 1 }),
+    });
+    const spawn: LintGuardSpawnFn = async () => ({ code: 2, output: "type error" });
+    const live = await runCodingAgentAttempt({
+      providerName: "noop",
+      task,
+      driver: fake,
+      lintGuard: { spawn, cwd: "/repo" },
+    });
+    expect(live.result.ok).toBe(false);
+    expect(live.result.lintGuard?.ok).toBe(false);
+  });
+
+  it("runCodingAgentAttempt keeps ok: true when the supplied lint guard passes", async () => {
+    const fake = createFakeCodingAgentDriver({
+      run: async () => ({ ok: true, changedFiles: ["src/review/ops-wire.ts"], summary: "did it", turnsUsed: 1 }),
+    });
+    const spawn: LintGuardSpawnFn = async () => ({ code: 0, output: "" });
+    const live = await runCodingAgentAttempt({
+      providerName: "noop",
+      task,
+      driver: fake,
+      lintGuard: { spawn, cwd: "/repo" },
+    });
+    expect(live.result.ok).toBe(true);
+    expect(live.result.lintGuard?.ok).toBe(true);
+  });
 });
 
 describe("lint-guarded edit wrapper (#4276)", () => {
@@ -477,6 +516,13 @@ describe("lint-guarded edit wrapper (#4276)", () => {
       "packages/gittensory-miner/lib/a.js",
       "packages/gittensory-miner/lib/b.js",
     ]);
+  });
+
+  it("guardChangedFiles returns ok: true with no checks for an empty changeset", async () => {
+    const { spawn, calls } = recordingSpawn({});
+    const result = await guardChangedFiles([], { spawn, cwd: "/repo" });
+    expect(result).toEqual({ ok: true, checks: [] });
+    expect(calls).toHaveLength(0);
   });
 
   it("guardChangedFiles defaults cwd to process.cwd() when omitted", async () => {
