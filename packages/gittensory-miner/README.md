@@ -151,6 +151,27 @@ It exposes these read-only tools:
 
 Further AMS-state-reading tools (status/doctor diagnostics) land as follow-up PRs on top of this server.
 
+### Client config
+
+`gittensory-mcp` (ORB's hosted contributor-workflow tools) and `gittensory-miner-mcp` (AMS's own local state-visibility tools above) can run as two separate stdio servers in the same MCP client session — useful for a dual-role operator running both ORB and AMS on the same box. Generate ORB's half with `gittensory-mcp init-client --print claude` (see the [`@jsonbored/gittensory-mcp` README](../gittensory-mcp/README.md#client-config)); `gittensory-miner-mcp` takes no flags, so its entry is just the bin name. Combined, a Claude Desktop / Claude Code style config looks like:
+
+```json
+{
+  "mcpServers": {
+    "gittensory": {
+      "command": "gittensory-mcp",
+      "args": ["--stdio"]
+    },
+    "gittensory-miner": {
+      "command": "gittensory-miner-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+`gittensory` exposes ORB's hosted contributor-workflow tools (issue ranking, PR packet prep, decision packs). `gittensory-miner` exposes AMS's own local state-visibility tools listed above (portfolio dashboard, claims, audit feed, run state, plans) — a fully separate, 100% local tool surface with no shared code or network calls between the two.
+
 ## Version check
 
 On every invocation the CLI starts an async npm registry lookup (5s timeout). When the installed package is behind `@jsonbored/gittensory-miner@latest`, it prints a one-line upgrade command to stderr without blocking or failing the requested command. Set `GITTENSORY_NPM_REGISTRY_URL` to point at a mirror, same as `@jsonbored/gittensory-mcp`.
