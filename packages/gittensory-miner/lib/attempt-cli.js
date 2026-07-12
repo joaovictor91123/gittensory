@@ -1,10 +1,12 @@
 // CLI dispatch for the real attempt pipeline (#5132, Wave 3.5 -- the final assembly). Wires bin/gittensory-miner.js's
 // `attempt` subcommand to real infrastructure end to end: worktree allocation + real git preparation
-// (worktree-allocator.js + attempt-worktree.js), the four ledgers (claim/event/attempt-log/governor), the
-// real coding-agent driver (#5131) and slop assessor (#5133), a live SelfReviewContext fetch (#5145), a real
-// coding-task spec (#5239), the operator's AmsPolicySpec execution policy (#5249), rejectionSignaled (#5241),
-// and finally a real runMinerAttempt call -- the first point in this epic where a real coding agent actually
-// runs, not just checks-and-reports-blocked.
+// (worktree-allocator.js + attempt-worktree.js), the four ledgers (claim/event/attempt-log/governor), a real
+// soft-claim staked before every attempt (#5393 -- previously only the manual `claim` subcommand ever called
+// claimIssue() for real, so checkSubmissionFreshness's own claim-required check would inevitably abort every
+// real attempt as "stale"), the real coding-agent driver (#5131) and slop assessor (#5133), a live
+// SelfReviewContext fetch (#5145), a real coding-task spec (#5239), the operator's AmsPolicySpec execution
+// policy (#5249), rejectionSignaled (#5241), and finally a real runMinerAttempt call -- the first point in
+// this epic where a real coding agent actually runs, not just checks-and-reports-blocked.
 //
 // KNOWN, DOCUMENTED GAPS (not fabricated -- see attempt-input-builder.js's own header for the full list):
 // governor.killSwitchRepoPaused only checks the GLOBAL env-var kill switch, not yet a real per-repo
@@ -127,11 +129,13 @@ export function buildAttemptDeps(env, ledgers) {
 
 /**
  * Run the `attempt` CLI subcommand end to end: resolveRejectionSignaled (before consuming a worktree slot) ->
- * acquire a concurrency slot -> assemble real AttemptDeps -> prepare a REAL git worktree -> fetch a real
+ * check for + stake a real soft-claim on the target issue (#5393, also before consuming a slot) -> acquire a
+ * concurrency slot -> assemble real AttemptDeps -> prepare a REAL git worktree -> fetch a real
  * SelfReviewContext -> build a real coding-task spec (blocks on an infeasible verdict) -> resolve the real
  * AmsPolicySpec execution policy -> assemble the real IterateLoopInput + Governor context -> call
- * runMinerAttempt for real. The worktree is cleaned up (or retained, per the real outcome) in `finally`.
- * See this file's header for the documented gaps (per-repo kill-switch pause, real convergence history).
+ * runMinerAttempt for real. The worktree is cleaned up (or retained, per the real outcome) and the claim
+ * released, in `finally`. See this file's header for the documented gaps (per-repo kill-switch pause, real
+ * convergence history).
  */
 export async function runAttempt(args, options = {}) {
   const parsed = parseAttemptArgs(args);
@@ -161,6 +165,7 @@ export async function runAttempt(args, options = {}) {
   let governorLedger = null;
   let allocation = null;
   let worktreeResult = null;
+  let claimed = false;
 
   try {
     allocator = (options.openWorktreeAllocator ?? openWorktreeAllocator)();
@@ -210,6 +215,56 @@ export async function runAttempt(args, options = {}) {
       options.onResult?.(rejectedResult);
       return 5;
     }
+
+    // Real soft-claim staking (#5393): checked/staked BEFORE acquiring a worktree slot, mirroring
+    // rejectionSignaled's own "don't consume a slot on work already known to be a no-go" rationale. Before
+    // this, nothing in the automated pipeline ever called claimLedger.claimIssue() for real -- only the
+    // manual `gittensory-miner claim` subcommand did -- so checkSubmissionFreshness (which REQUIRES an
+    // active claim to already exist by submission time, see submission-freshness-check.js) would inevitably
+    // abort every real attempt as "stale" regardless of how well the coding-agent loop went. A pre-existing
+    // ACTIVE claim on this exact repo+issue (from a prior invocation on this same machine, or a manual claim)
+    // means work is already in flight -- observe it and stop rather than silently duplicating it, instead of
+    // discovering the conflict only after spending a full worktree-prep + coding-agent run.
+    const existingClaim = claimLedger
+      .listClaims({ repoFullName: parsed.repoFullName, status: "active" })
+      .find((claim) => claim.issueNumber === parsed.issueNumber);
+    if (existingClaim) {
+      const reason = "already_claimed";
+      attemptLog.appendAttemptLogEvent({
+        eventType: "attempt_aborted",
+        attemptId,
+        actionClass: "open_pr",
+        mode,
+        reason,
+        payload: { repoFullName: parsed.repoFullName, issueNumber: parsed.issueNumber },
+      });
+      eventLedger.appendEvent({
+        type: "attempt_blocked",
+        repoFullName: parsed.repoFullName,
+        payload: { issueNumber: parsed.issueNumber, reason },
+      });
+      const alreadyClaimedResult = {
+        outcome: "blocked_already_claimed",
+        reason,
+        repoFullName: parsed.repoFullName,
+        issueNumber: parsed.issueNumber,
+        minerLogin: parsed.minerLogin,
+        base: parsed.base,
+        mode,
+        attemptId,
+      };
+      if (parsed.json) {
+        console.log(JSON.stringify(alreadyClaimedResult, null, 2));
+      } else {
+        console.error(
+          `Attempt for ${parsed.repoFullName}#${parsed.issueNumber} is blocked: an active claim already exists in this machine's claim ledger.`,
+        );
+      }
+      options.onResult?.(alreadyClaimedResult);
+      return 11;
+    }
+    claimLedger.claimIssue(parsed.repoFullName, parsed.issueNumber, `attempt ${attemptId}`);
+    claimed = true;
 
     allocation = allocator.acquire(attemptId, parsed.repoFullName);
 
@@ -424,6 +479,12 @@ export async function runAttempt(args, options = {}) {
     }
     if (allocation && allocator) allocator.release(attemptId);
     allocator?.close();
+    // Mirrors the allocator's own acquire/release lifecycle above: a claim staked for real at the top of
+    // this function is released on every terminal outcome (submitted/abandon/stale/blocked/governed) and on
+    // every early-abort path reached AFTER staking it, so this miner's own soft-claim never outlives the
+    // attempt that made it. Never "expired" here -- that status is reserved for a claim whose owner never
+    // came back to release it at all (claim-ledger-expiry.js's own sweep), not a normal completion.
+    if (claimed && claimLedger) claimLedger.releaseClaim(parsed.repoFullName, parsed.issueNumber);
     claimLedger?.close();
     eventLedger?.close();
     attemptLog?.close();

@@ -561,6 +561,179 @@ describe("runAttempt (#5132)", () => {
     expect(log).toHaveBeenCalled();
   });
 
+  describe("real soft-claim staking (#5393)", () => {
+    it("REGRESSION: stakes a real claim before acquiring the worktree slot, and releases it on a submitted outcome", async () => {
+      const { allocator, claimLedger, eventLedger, attemptLog, governorLedger } = tempLedgers();
+      vi.spyOn(console, "log").mockImplementation(() => undefined);
+      const claimIssueSpy = vi.spyOn(claimLedger, "claimIssue");
+      const releaseClaimSpy = vi.spyOn(claimLedger, "releaseClaim");
+      let claimDuringRun;
+      const runMinerAttemptSpy = vi.fn().mockImplementation(async () => {
+        // Peek at real ledger state from mid-pipeline -- proves the claim was staked BEFORE runMinerAttempt
+        // was ever called, not just eventually released after the fact.
+        claimDuringRun = claimLedger.listClaims({ repoFullName: "acme/widgets", status: "active" });
+        return { outcome: "submitted", spec: { command: "gh pr create", cwd: "/fake", timeoutMs: 1 }, execResult: { code: 0 }, loopResult: {} };
+      });
+
+      const exitCode = await runAttempt(["acme/widgets", "7", "--miner-login", "alice", "--json"], {
+        env: { MINER_CODING_AGENT_PROVIDER: "noop" },
+        attemptId: "claim-regression-attempt",
+        openWorktreeAllocator: () => allocator,
+        openClaimLedger: () => claimLedger,
+        initEventLedger: () => eventLedger,
+        initAttemptLog: () => attemptLog,
+        initGovernorLedger: () => governorLedger,
+        ...readyPipelineOptions({ runMinerAttempt: runMinerAttemptSpy }),
+      });
+
+      expect(exitCode).toBe(0);
+      expect(claimIssueSpy).toHaveBeenCalledWith("acme/widgets", 7, "attempt claim-regression-attempt");
+      expect(claimDuringRun).toEqual([
+        expect.objectContaining({ repoFullName: "acme/widgets", issueNumber: 7, status: "active" }),
+      ]);
+      // Released for real once the attempt finished -- not left dangling for the next invocation to trip over.
+      // (runAttempt's own `finally` already closed claimLedger by now, so this checks the spy, not the
+      // now-closed object -- reusing a closed ledger throws "statement has been finalized".)
+      expect(releaseClaimSpy).toHaveBeenCalledWith("acme/widgets", 7);
+    });
+
+    it.each([
+      ["abandon", { outcome: "abandon", loopResult: {} }],
+      ["stale", { outcome: "stale", reason: "expired", loopResult: {} }],
+      ["blocked", { outcome: "blocked", decision: { allow: false }, loopResult: {} }],
+      ["governed", { outcome: "governed", decision: { allowed: false }, loopResult: {} }],
+    ] as const)("releases the real claim on a real %s outcome, not just on submitted", async (_label, mockResult) => {
+      const { allocator, claimLedger, eventLedger, attemptLog, governorLedger } = tempLedgers();
+      vi.spyOn(console, "log").mockImplementation(() => undefined);
+      const releaseClaimSpy = vi.spyOn(claimLedger, "releaseClaim");
+
+      await runAttempt(["acme/widgets", "7", "--miner-login", "alice", "--json"], {
+        env: { MINER_CODING_AGENT_PROVIDER: "noop" },
+        openWorktreeAllocator: () => allocator,
+        openClaimLedger: () => claimLedger,
+        initEventLedger: () => eventLedger,
+        initAttemptLog: () => attemptLog,
+        initGovernorLedger: () => governorLedger,
+        ...readyPipelineOptions({ runMinerAttempt: async () => mockResult }),
+      });
+
+      expect(releaseClaimSpy).toHaveBeenCalledWith("acme/widgets", 7);
+    });
+
+    it("blocks with blocked_already_claimed (exit 11) when an active claim already exists, before ever acquiring a worktree slot", async () => {
+      const { allocator, claimLedger, eventLedger, attemptLog, governorLedger } = tempLedgers();
+      const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+      const acquireSpy = vi.spyOn(allocator, "acquire");
+      const appendAttemptLogEventSpy = vi.spyOn(attemptLog, "appendAttemptLogEvent");
+      const runMinerAttemptSpy = vi.fn();
+      // Staked BEFORE the spy is installed below, so the spy only observes calls made by runAttempt itself,
+      // not this test's own setup call.
+      claimLedger.claimIssue("acme/widgets", 7, "staked by a prior invocation");
+      const claimIssueSpy = vi.spyOn(claimLedger, "claimIssue");
+      const dbPath = claimLedger.dbPath;
+
+      const exitCode = await runAttempt(["acme/widgets", "7", "--miner-login", "alice", "--json"], {
+        env: { MINER_CODING_AGENT_PROVIDER: "noop" },
+        attemptId: "already-claimed-attempt",
+        openWorktreeAllocator: () => allocator,
+        openClaimLedger: () => claimLedger,
+        initEventLedger: () => eventLedger,
+        initAttemptLog: () => attemptLog,
+        initGovernorLedger: () => governorLedger,
+        resolveRejectionSignaled: async () => false,
+        runMinerAttempt: runMinerAttemptSpy,
+      });
+
+      expect(exitCode).toBe(11);
+      expect(JSON.parse(String(log.mock.calls[0]?.[0]))).toEqual({
+        outcome: "blocked_already_claimed",
+        reason: "already_claimed",
+        repoFullName: "acme/widgets",
+        issueNumber: 7,
+        minerLogin: "alice",
+        base: "main",
+        mode: "dry_run",
+        attemptId: "already-claimed-attempt",
+      });
+      // No worktree slot was ever acquired for an issue we already know is being worked on.
+      expect(acquireSpy).not.toHaveBeenCalled();
+      // The pre-existing claim was observed, not re-staked/refreshed by this invocation.
+      expect(claimIssueSpy).not.toHaveBeenCalled();
+      expect(runMinerAttemptSpy).not.toHaveBeenCalled();
+      expect(appendAttemptLogEventSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ eventType: "attempt_aborted", attemptId: "already-claimed-attempt", reason: "already_claimed" }),
+      );
+      // The pre-existing claim (made by "a prior invocation") is left completely untouched -- this invocation
+      // never staked its own claim, so it has nothing to release. runAttempt's own `finally` already closed
+      // claimLedger, so re-open the same on-disk file fresh to inspect real persisted state.
+      const inspectLedger = openClaimLedger(dbPath);
+      closeables.push(inspectLedger);
+      expect(inspectLedger.listClaims({ repoFullName: "acme/widgets", status: "active" })).toEqual([
+        expect.objectContaining({ note: "staked by a prior invocation" }),
+      ]);
+    });
+
+    it("blocks with a human-readable message by default when an active claim already exists", async () => {
+      const { allocator, claimLedger, eventLedger, attemptLog, governorLedger } = tempLedgers();
+      const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      claimLedger.claimIssue("acme/widgets", 7);
+
+      const exitCode = await runAttempt(["acme/widgets", "7", "--miner-login", "alice"], {
+        env: { MINER_CODING_AGENT_PROVIDER: "noop" },
+        openWorktreeAllocator: () => allocator,
+        openClaimLedger: () => claimLedger,
+        initEventLedger: () => eventLedger,
+        initAttemptLog: () => attemptLog,
+        initGovernorLedger: () => governorLedger,
+        resolveRejectionSignaled: async () => false,
+        runMinerAttempt: vi.fn(),
+      });
+
+      expect(exitCode).toBe(11);
+      expect(error).toHaveBeenCalledWith(expect.stringContaining("an active claim already exists"));
+    });
+
+    it("REGRESSION: releases the staked claim even when worktree preparation fails after staking it", async () => {
+      const { allocator, claimLedger, eventLedger, attemptLog, governorLedger } = tempLedgers();
+      vi.spyOn(console, "log").mockImplementation(() => undefined);
+      const releaseClaimSpy = vi.spyOn(claimLedger, "releaseClaim");
+
+      await runAttempt(["acme/widgets", "7", "--miner-login", "alice", "--json"], {
+        env: { MINER_CODING_AGENT_PROVIDER: "noop" },
+        openWorktreeAllocator: () => allocator,
+        openClaimLedger: () => claimLedger,
+        initEventLedger: () => eventLedger,
+        initAttemptLog: () => attemptLog,
+        initGovernorLedger: () => governorLedger,
+        resolveRejectionSignaled: async () => false,
+        prepareAttemptWorktree: async () => ({ ok: false, error: "git_clone_failed" }),
+        cleanupAttemptWorktree: vi.fn(),
+      });
+
+      // Staked before worktree preparation ran, and the block path's `finally` still released it -- the
+      // claim never outlives a failed attempt.
+      expect(releaseClaimSpy).toHaveBeenCalledWith("acme/widgets", 7);
+    });
+
+    it("never calls releaseClaim when the rejection-signaled block is hit before any claim is staked", async () => {
+      const { allocator, claimLedger, eventLedger, attemptLog, governorLedger } = tempLedgers();
+      vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const releaseClaimSpy = vi.spyOn(claimLedger, "releaseClaim");
+
+      await runAttempt(["acme/widgets", "7", "--miner-login", "alice"], {
+        env: { MINER_CODING_AGENT_PROVIDER: "noop" },
+        openWorktreeAllocator: () => allocator,
+        openClaimLedger: () => claimLedger,
+        initEventLedger: () => eventLedger,
+        initAttemptLog: () => attemptLog,
+        initGovernorLedger: () => governorLedger,
+        resolveRejectionSignaled: async () => true,
+      });
+
+      expect(releaseClaimSpy).not.toHaveBeenCalled();
+    });
+  });
+
   it("REGRESSION: reports a real block and releases the worktree slot when worktree preparation fails", async () => {
     const { allocator, claimLedger, eventLedger, attemptLog, governorLedger } = tempLedgers();
     const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
