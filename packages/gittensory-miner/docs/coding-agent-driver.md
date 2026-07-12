@@ -129,3 +129,4 @@ between loop cycles -- an after-the-fact, cross-cycle total, not the per-iterati
 - [`env-reference.md`](env-reference.md) — env vars including ledger path overrides.
 - [`../DEPLOYMENT.md`](../DEPLOYMENT.md) — laptop vs fleet deployment and state directory layout.
 - [`miner-goal-spec.md`](miner-goal-spec.md) — per-repo `.gittensory-miner.yml` targeting policy.
+- [`../README.md#mcp-server`](../README.md#mcp-server) — the `gittensory-miner-mcp` read-only tool surface for querying this driver's resolved status (provider, model env-var name, CLI presence) and the rest of AMS's local state over MCP.
