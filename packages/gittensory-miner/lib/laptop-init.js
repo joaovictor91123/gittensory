@@ -103,15 +103,30 @@ function resolveCodexAuthPath(env = process.env) {
   return join(base, "auth.json");
 }
 
-/** Informational only — a coding-agent CLI is only needed once a driver provider is configured (#4289), so a
- *  missing or unauthenticated CLI is advisory (`ok: true`), mirroring checkDockerPresent's optional tone. The
- *  auth probe is read-only and never spawns the CLI: it surfaces, proactively, the SAME condition claude
- *  checks at call time — `CLAUDE_CODE_OAUTH_TOKEN` present (see createClaudeCodeAi, src/selfhost/ai.ts). */
+/** A coding-agent CLI is only needed once a driver provider is configured (#4289) — gated by
+ *  `MINER_CODING_AGENT_PROVIDER` (#5165). When that provider is NOT the CLI being checked, absence is
+ *  advisory (`ok: true`), mirroring checkDockerPresent's optional tone. When it IS configured and the CLI is
+ *  missing, `ok: false` — every attempt will fail without it. The auth probe (once found) stays advisory
+ *  either way, since an unauthenticated-but-installed CLI is a separate, already-visible warning. */
+function codingAgentProviderConfiguredFor(env, providerName) {
+  return env.MINER_CODING_AGENT_PROVIDER === providerName;
+}
+
+/** Informational unless `MINER_CODING_AGENT_PROVIDER=claude-cli` (#5165), in which case a missing CLI fails
+ *  doctor. The auth probe is read-only and never spawns the CLI: it surfaces, proactively, the SAME condition
+ *  claude checks at call time — `CLAUDE_CODE_OAUTH_TOKEN` present (see createClaudeCodeAi, src/selfhost/ai.ts). */
 export function checkClaudeCliPresent(options = {}) {
   const env = options.env ?? process.env;
   const claudePath = (options.resolveClaudePath ?? (() => findExecutableOnPath("claude", env)))();
   if (!claudePath) {
-    return { name: "claude-cli-present", ok: true, detail: "not installed (optional until a coding-agent driver is configured)" };
+    const configured = codingAgentProviderConfiguredFor(env, "claude-cli");
+    return {
+      name: "claude-cli-present",
+      ok: !configured,
+      detail: configured
+        ? "not installed — MINER_CODING_AGENT_PROVIDER is set to claude-cli, every attempt will fail without it"
+        : "not installed (optional until a coding-agent driver is configured)",
+    };
   }
   const authed = typeof env.CLAUDE_CODE_OAUTH_TOKEN === "string" && env.CLAUDE_CODE_OAUTH_TOKEN.length > 0;
   return {
@@ -121,13 +136,21 @@ export function checkClaudeCliPresent(options = {}) {
   };
 }
 
-/** Informational only — mirrors {@link checkClaudeCliPresent} for the codex CLI. The auth probe checks the
- *  same read-only condition assertCodexAuthConfigured uses at call time: codex's `auth.json` is readable. */
+/** Informational unless `MINER_CODING_AGENT_PROVIDER=codex-cli` (#5165), in which case a missing CLI fails
+ *  doctor — mirrors {@link checkClaudeCliPresent}. The auth probe checks the same read-only condition
+ *  assertCodexAuthConfigured uses at call time: codex's `auth.json` is readable. */
 export function checkCodexCliPresent(options = {}) {
   const env = options.env ?? process.env;
   const codexPath = (options.resolveCodexPath ?? (() => findExecutableOnPath("codex", env)))();
   if (!codexPath) {
-    return { name: "codex-cli-present", ok: true, detail: "not installed (optional until a coding-agent driver is configured)" };
+    const configured = codingAgentProviderConfiguredFor(env, "codex-cli");
+    return {
+      name: "codex-cli-present",
+      ok: !configured,
+      detail: configured
+        ? "not installed — MINER_CODING_AGENT_PROVIDER is set to codex-cli, every attempt will fail without it"
+        : "not installed (optional until a coding-agent driver is configured)",
+    };
   }
   const authPath = (options.resolveCodexAuthPath ?? (() => resolveCodexAuthPath(env)))();
   let authed = false;

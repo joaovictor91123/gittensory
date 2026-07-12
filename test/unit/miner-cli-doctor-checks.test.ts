@@ -58,4 +58,89 @@ describe("gittensory-miner doctor — coding-agent CLI checks (#4304)", () => {
     expect(names).toContain("claude-cli-present");
     expect(names).toContain("codex-cli-present");
   });
+
+  describe("provider-gated CLI-presence failures (#5165)", () => {
+    it("claude: regression -- CLI missing while unconfigured no longer breaks doctor (ok stays true)", () => {
+      const check = checkClaudeCliPresent({ env: {}, resolveClaudePath: () => null });
+      expect(check.ok).toBe(true);
+    });
+
+    it("claude: CLI missing + a DIFFERENT provider configured stays advisory (ok true)", () => {
+      const check = checkClaudeCliPresent({
+        env: { MINER_CODING_AGENT_PROVIDER: "codex-cli" },
+        resolveClaudePath: () => null,
+      });
+      expect(check.ok).toBe(true);
+      expect(check.detail).toMatch(/^not installed \(optional/);
+    });
+
+    it("claude: CLI missing + claude-cli configured fails doctor with an actionable message", () => {
+      const check = checkClaudeCliPresent({
+        env: { MINER_CODING_AGENT_PROVIDER: "claude-cli" },
+        resolveClaudePath: () => null,
+      });
+      expect(check.ok).toBe(false);
+      expect(check.detail).toBe(
+        "not installed — MINER_CODING_AGENT_PROVIDER is set to claude-cli, every attempt will fail without it",
+      );
+    });
+
+    it("claude: CLI present + claude-cli configured still reports the normal present/authenticated detail", () => {
+      const check = checkClaudeCliPresent({
+        env: { MINER_CODING_AGENT_PROVIDER: "claude-cli", CLAUDE_CODE_OAUTH_TOKEN: "present" },
+        resolveClaudePath: () => "/usr/bin/claude",
+      });
+      expect(check.ok).toBe(true);
+      expect(check.detail).toBe("found at /usr/bin/claude (authenticated)");
+    });
+
+    it("codex: regression -- CLI missing while unconfigured no longer breaks doctor (ok stays true)", () => {
+      const check = checkCodexCliPresent({ env: {}, resolveCodexPath: () => null });
+      expect(check.ok).toBe(true);
+    });
+
+    it("codex: CLI missing + a DIFFERENT provider configured stays advisory (ok true)", () => {
+      const check = checkCodexCliPresent({
+        env: { MINER_CODING_AGENT_PROVIDER: "claude-cli" },
+        resolveCodexPath: () => null,
+      });
+      expect(check.ok).toBe(true);
+      expect(check.detail).toMatch(/^not installed \(optional/);
+    });
+
+    it("codex: CLI missing + codex-cli configured fails doctor with an actionable message", () => {
+      const check = checkCodexCliPresent({
+        env: { MINER_CODING_AGENT_PROVIDER: "codex-cli" },
+        resolveCodexPath: () => null,
+      });
+      expect(check.ok).toBe(false);
+      expect(check.detail).toBe(
+        "not installed — MINER_CODING_AGENT_PROVIDER is set to codex-cli, every attempt will fail without it",
+      );
+    });
+
+    it("codex: CLI present + codex-cli configured still reports the normal present/authenticated detail", () => {
+      const authFile = join(tempRoot(), "auth.json");
+      writeFileSync(authFile, "{}");
+      const check = checkCodexCliPresent({
+        env: { MINER_CODING_AGENT_PROVIDER: "codex-cli" },
+        resolveCodexPath: () => "/usr/bin/codex",
+        resolveCodexAuthPath: () => authFile,
+      });
+      expect(check.ok).toBe(true);
+      expect(check.detail).toBe("found at /usr/bin/codex (authenticated)");
+    });
+
+    it("invariant: an unconfigured (or differently-configured) provider's CLI check is never reported as ok: false regardless of CLI presence", () => {
+      const missingUnconfigured = checkClaudeCliPresent({ env: {}, resolveClaudePath: () => null });
+      const presentUnconfigured = checkClaudeCliPresent({ env: {}, resolveClaudePath: () => "/usr/bin/claude" });
+      const missingOtherProvider = checkCodexCliPresent({
+        env: { MINER_CODING_AGENT_PROVIDER: "claude-cli" },
+        resolveCodexPath: () => null,
+      });
+      expect(missingUnconfigured.ok).toBe(true);
+      expect(presentUnconfigured.ok).toBe(true);
+      expect(missingOtherProvider.ok).toBe(true);
+    });
+  });
 });
