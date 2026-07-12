@@ -79,7 +79,7 @@ describe("gittensory-miner status/doctor (#2288)", () => {
 
   it("doctor passes on a healthy setup (writable state dir, initialized sqlite, optional Docker, GITHUB_TOKEN set)", () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
-    const env = { GITTENSORY_MINER_CONFIG_DIR: join(tempRoot(), "state"), GITHUB_TOKEN: "ghp_faketoken" };
+    const env = { GITTENSORY_MINER_CONFIG_DIR: join(tempRoot(), "state"), GITHUB_TOKEN: "present-value-not-a-real-token" };
     initLaptopState(env);
     const checks = runDoctorChecks(env);
     expect(checks.every((check) => check.ok)).toBe(true);
@@ -156,7 +156,7 @@ describe("gittensory-miner status/doctor (#2288)", () => {
 
   it("runDoctor supports --json output", () => {
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
-    const env = { GITTENSORY_MINER_CONFIG_DIR: join(tempRoot(), "state"), GITHUB_TOKEN: "ghp_faketoken" };
+    const env = { GITTENSORY_MINER_CONFIG_DIR: join(tempRoot(), "state"), GITHUB_TOKEN: "present-value-not-a-real-token" };
     initLaptopState(env);
     expect(runDoctor(["--json"], env)).toBe(0);
     expect(JSON.parse(String(log.mock.calls[0]?.[0])).checks).toBeDefined();
@@ -318,7 +318,7 @@ describe("gittensory-miner status/doctor (#2288)", () => {
 
   describe("doctor credential-presence checks (#5170)", () => {
     it("github-token-present: ok true when GITHUB_TOKEN is a non-empty string", () => {
-      const check = runDoctorChecks({ GITHUB_TOKEN: "ghp_faketoken" }).find(
+      const check = runDoctorChecks({ GITHUB_TOKEN: "present-value-not-a-real-token" }).find(
         (c) => c.name === "github-token-present",
       );
       expect(check?.ok).toBe(true);
@@ -398,13 +398,13 @@ describe("gittensory-miner status/doctor (#2288)", () => {
         throw new Error("network calls are forbidden");
       });
       vi.stubGlobal("fetch", fetchStub);
-      runDoctorChecks({ GITHUB_TOKEN: "ghp_faketoken", MINER_CODING_AGENT_PROVIDER: "codex-cli" });
+      runDoctorChecks({ GITHUB_TOKEN: "present-value-not-a-real-token", MINER_CODING_AGENT_PROVIDER: "codex-cli" });
       expect(fetchStub).not.toHaveBeenCalled();
     });
 
     it("invariant: doctor's output never contains an actual credential value, only presence booleans/names/paths", () => {
       const log = vi.spyOn(console, "log").mockImplementation(() => {});
-      const secretToken = "ghp_should-never-appear-in-doctor-output";
+      const secretToken = "test-value-should-never-appear-in-doctor-output";
       const secretOauth = "oauth-should-never-appear-in-doctor-output";
       runDoctor(["--json"], {
         GITTENSORY_MINER_CONFIG_DIR: tempRoot(),
