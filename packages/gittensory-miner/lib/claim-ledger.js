@@ -192,9 +192,17 @@ export function openClaimLedgerReadOnly(dbPath) {
   // and opens read-write anyway, defeating the entire point of this function. Verified empirically: a write
   // via a `{ readonly: true }` connection succeeds with no error.
   const db = new DatabaseSync(resolvedPath, { readOnly: true });
-  const listActiveStatement = db.prepare(
-    "SELECT * FROM miner_claims WHERE repo_full_name = ? AND status = 'active' ORDER BY id ASC",
-  );
+  let listActiveStatement;
+  try {
+    listActiveStatement = db.prepare(
+      "SELECT * FROM miner_claims WHERE repo_full_name = ? AND status = 'active' ORDER BY id ASC",
+    );
+  } catch (error) {
+    // The table doesn't exist (a file exists at this path but isn't a real claim ledger) -- close the
+    // connection we already opened before rethrowing, so this never leaks a file handle.
+    db.close();
+    throw error;
+  }
   return {
     dbPath: resolvedPath,
     listActiveClaims(repoFullName) {
