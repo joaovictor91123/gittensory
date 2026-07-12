@@ -240,4 +240,96 @@ describe("createCliSubprocessCodingAgentDriver (#4266)", () => {
       expect(result.error).toContain("[redacted]");
     });
   });
+
+  describe("Codex JSONL stdout error diagnostics (#5169)", () => {
+    it("prefers a real error object found in JSONL stdout over the generic exit-code error", async () => {
+      const { spawn } = fakeSpawn({
+        stdout: '{"type":"start"}\n{"error":"unknown model: gpt-9"}',
+        code: 1,
+        stderr: "Reading prompt from stdin...",
+      });
+      const driver = createCliSubprocessCodingAgentDriver({ command: "codex", spawn });
+      const result = await driver.run(TASK);
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe("codex_exit_1: unknown model: gpt-9");
+    });
+
+    it("scans lines in reverse and returns the LAST detail-bearing line, skipping malformed/non-JSON lines in between", async () => {
+      const { spawn } = fakeSpawn({
+        stdout: '{"message":"stale first error"}\nnot json at all\n\n{"msg":"the real final error"}',
+        code: 1,
+      });
+      const driver = createCliSubprocessCodingAgentDriver({ command: "codex", spawn });
+      const result = await driver.run(TASK);
+      expect(result.error).toBe("codex_exit_1: the real final error");
+    });
+
+    it("falls through past a falsy (empty-string) error field to the next detail field", async () => {
+      const { spawn } = fakeSpawn({
+        stdout: JSON.stringify({ error: "", message: "the real message" }),
+        code: 1,
+      });
+      const driver = createCliSubprocessCodingAgentDriver({ command: "codex", spawn });
+      const result = await driver.run(TASK);
+      expect(result.error).toBe("codex_exit_1: the real message");
+    });
+
+    it("extracts the detail from a nested error.message object shape", async () => {
+      const { spawn } = fakeSpawn({
+        stdout: JSON.stringify({ error: { message: "rate limited" } }),
+        code: 1,
+      });
+      const driver = createCliSubprocessCodingAgentDriver({ command: "codex", spawn });
+      const result = await driver.run(TASK);
+      expect(result.error).toBe("codex_exit_1: rate limited");
+    });
+
+    it("resolves to a 'run codex auth' remediation when stdout has no detail and stderr is only the stdin-reading banner", async () => {
+      const { spawn } = fakeSpawn({
+        stdout: "",
+        code: 1,
+        stderr: "Reading prompt from stdin...",
+      });
+      const driver = createCliSubprocessCodingAgentDriver({ command: "codex", spawn });
+      const result = await driver.run(TASK);
+      expect(result.error).toBe("codex_no_auth: auth.json missing or expired -- run `codex auth` to authenticate");
+    });
+
+    it("regression: falls back to the generic stderr-based error unchanged when stdout has nothing parseable and stderr is NOT the exact auth banner", async () => {
+      const { spawn } = fakeSpawn({
+        stdout: "not json at all",
+        code: 1,
+        stderr: "some other stderr detail",
+      });
+      const driver = createCliSubprocessCodingAgentDriver({ command: "codex", spawn });
+      const result = await driver.run(TASK);
+      expect(result.error).toBe("codex_exit_1: some other stderr detail");
+    });
+
+    it("never scans stdout for JSONL errors on a non-codex command (falls through untouched even with codex-shaped stdout)", async () => {
+      const { spawn } = fakeSpawn({
+        stdout: '{"error":"unknown model: gpt-9"}',
+        code: 1,
+        stderr: "claude own stderr",
+      });
+      const driver = createCliSubprocessCodingAgentDriver({ command: "claude", spawn });
+      const result = await driver.run(TASK);
+      expect(result.error).toBe("claude_exit_1: claude own stderr");
+    });
+
+    it("invariant: a folded JSONL-detail error is never left unredacted when it contains a known secret value", async () => {
+      const { spawn } = fakeSpawn({
+        stdout: JSON.stringify({ error: "auth failed for token my-injected-longkey-leaked" }),
+        code: 1,
+      });
+      const driver = createCliSubprocessCodingAgentDriver({
+        command: "codex",
+        spawn,
+        knownSecrets: ["my-injected-longkey-leaked"],
+      });
+      const result = await driver.run(TASK);
+      expect(result.error).not.toContain("my-injected-longkey-leaked");
+      expect(result.error).toContain("[redacted]");
+    });
+  });
 });

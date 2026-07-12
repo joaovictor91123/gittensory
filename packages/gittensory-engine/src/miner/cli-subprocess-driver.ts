@@ -103,6 +103,34 @@ function claudeErrorStatus(stdout: string): string | null {
   return null;
 }
 
+/** Codex's stderr is typically just an uninformative "Reading prompt from stdin..." startup banner; the real
+ *  error (auth failure, unknown model, API error) lands in its JSONL stdout instead. Scans lines in reverse
+ *  (the error object is usually last) and returns the first human-readable detail found, or null. Ported from
+ *  src/selfhost/ai.ts's `codexErrorFromStdout` -- redeclared here (not imported) per this file's own
+ *  no-src-import convention, and returns the RAW detail unredacted; the caller applies this driver's own
+ *  knownSecrets-aware `redactSecrets` at the call site (#5169). */
+function codexErrorFromStdout(stdout: string): string | null {
+  const lines = stdout.trim().split(/\r?\n/);
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    const line = lines[i];
+    if (!line?.trim()) continue;
+    try {
+      const parsed = JSON.parse(line) as Record<string, unknown>;
+      const errorObj = parsed.error as Record<string, unknown> | undefined;
+      const detail =
+        (typeof parsed.error === "string" && parsed.error) ||
+        (typeof parsed.message === "string" && parsed.message) ||
+        (typeof parsed.msg === "string" && parsed.msg) ||
+        (errorObj && typeof errorObj.message === "string" ? errorObj.message : null) ||
+        null;
+      if (detail) return detail;
+    } catch {
+      /* not JSON -- skip */
+    }
+  }
+  return null;
+}
+
 /** The default argv contract, exported so the factory (#4289) can PREFIX provider config (e.g. a configured
  *  model flag) without re-inventing — and silently drifting from — this baseline argv shape. */
 export function defaultCliSubprocessArgs(task: CodingAgentDriverTask): string[] {
@@ -169,6 +197,37 @@ export function createCliSubprocessCodingAgentDriver(options: CliSubprocessDrive
               summary: `${options.command} exited non-zero`,
               transcript,
               error: redactSecrets(`claude_code_error_${errStatus}`, knownSecrets),
+            };
+          }
+        }
+        if (options.command === "codex") {
+          const stderrTrimmed = (spawned.stderr ?? "").trim();
+          const jsonlDetail = codexErrorFromStdout(spawned.stdout);
+          if (!jsonlDetail && stderrTrimmed === "Reading prompt from stdin...") {
+            // codex's JSONL stream carried no structured detail and stderr is ONLY the stdin-reading banner (no
+            // API/auth error appended) -- auth.json was present at boot-time but is now expired or was deleted.
+            // A distinct, actionable remediation instead of the generic exit-code string (#5169).
+            return {
+              ok: false,
+              changedFiles: [],
+              summary: `${options.command} exited non-zero`,
+              transcript,
+              error: redactSecrets(
+                "codex_no_auth: auth.json missing or expired -- run `codex auth` to authenticate",
+                knownSecrets,
+              ),
+            };
+          }
+          if (jsonlDetail) {
+            // Prefer the structured error from codex's JSONL stdout over the uninformative stderr startup
+            // message -- codex reports auth/model/API failures in its JSON stream, not stderr.
+            const detail = redactSecrets(jsonlDetail, knownSecrets).slice(0, MAX_ERROR_DETAIL_CHARS);
+            return {
+              ok: false,
+              changedFiles: [],
+              summary: `${options.command} exited non-zero`,
+              transcript,
+              error: `${options.command}_exit_${spawned.code}: ${detail}`,
             };
           }
         }
