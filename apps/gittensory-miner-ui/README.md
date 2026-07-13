@@ -26,3 +26,17 @@ automatically on every subsequent same-origin `fetch()` call, so none of the cli
 to know about it. A request from another local process, or from a different page/origin the user has open
 (including a DNS-rebinding attempt), has no way to obtain the cookie and is rejected. There is nothing to
 configure — this is always on for both `vite dev` and `vite preview`.
+
+## Running as a persistent service
+
+`npm run dev` is a foreground dev server; it doesn't survive a terminal closing or a reboot. For a
+fleet/bare-host operator who wants the dashboard durably available, `npm run build` followed by
+`npm run preview` serves the built dashboard **and** its local-SQLite-backed API routes (the
+`vite-*-api.ts` plugins register for both `configureServer` and `configurePreviewServer`, so nothing
+extra is needed beyond the build step) on port `4174` by default.
+
+[`systemd/gittensory-miner-ui.service.example`](../../systemd/gittensory-miner-ui.service.example) at
+the repo root is a ready-to-adapt persistent unit for this — a companion to
+`gittensory-miner.service.example` (the loop daemon), not a replacement for it. Its header comment
+carries the full install steps. Like the loop daemon, this is a `Type=simple` service, not a `.timer`
+job — the dashboard is a long-running HTTP server, not a periodic batch task.
