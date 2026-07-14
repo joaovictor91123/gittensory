@@ -314,6 +314,7 @@ export type FocusManifestGateConfig = {
   claCheckRunName: string | null;
   claCheckRunAppSlug: string | null;
   expectedCiContexts: ReadonlyArray<string> | null;
+  advisoryCheckRuns: ReadonlyArray<{ name: string; appSlug: string }> | null;
 };
 
 export type PreMergeCheck = {

@@ -2533,6 +2533,21 @@ function isBotOwnedRequiredContextName(name: string): boolean {
   return BOT_OWNED_CHECK_NAMES.has(name);
 }
 
+// #4372: does this check-run match a maintainer-declared advisory entry? Matched by name (case-insensitive) AND
+// the trusted producing app slug — the SAME spoof-resistant pattern as the CLA check-run detection: a
+// contributor-controlled same-name run from a different app must never be trusted as advisory. Generic — no
+// vendor name is ever hardcoded here; the list comes entirely from `.loopover.yml gate.advisoryCheckRuns`.
+function matchAdvisoryCheckRun(
+  run: { name: string; app?: { slug?: string | null } | null },
+  advisoryCheckRuns: ReadonlyArray<{ name: string; appSlug: string }> | null | undefined,
+): { name: string; appSlug: string } | undefined {
+  if (!advisoryCheckRuns || advisoryCheckRuns.length === 0) return undefined;
+  const nameLc = run.name.trim().toLowerCase();
+  const appSlugLc = typeof run.app?.slug === "string" ? run.app.slug.trim().toLowerCase() : "";
+  if (!appSlugLc) return undefined; // a spoofable name-only match is never trusted (mirrors the CLA path)
+  return advisoryCheckRuns.find((entry) => entry.name.trim().toLowerCase() === nameLc && entry.appSlug.trim().toLowerCase() === appSlugLc);
+}
+
 function normalizeCiContextName(name: string): string {
   const trimmed = name.trim();
   const slashIndex = trimmed.lastIndexOf("/");
@@ -2572,6 +2587,12 @@ export type LiveCiAggregate = {
   failingDetails: Array<{ name: string; summary?: string; detailsUrl?: string }>;
   // Historical compatibility: non-required red checks are now folded into failingDetails so this stays empty.
   nonRequiredFailingDetails: Array<{ name: string; summary?: string; detailsUrl?: string }>;
+  // #4372: a maintainer-declared `gate.advisoryCheckRuns` check-run that resolved COMPLETED to a NON-passing
+  // conclusion (anything other than success/neutral/skipped — e.g. a scanner's durable `action_required`). Such
+  // a run is excluded from ciState/hasPending entirely (never gates CI, never counts as "still running"), but is
+  // surfaced here so the disposition planner can route the PR to a manual-review hold instead of silently
+  // swallowing a signal a maintainer installed a whole app to raise. Empty for every repo that doesn't opt in.
+  advisoryHoldDetails: Array<{ name: string; appSlug: string; conclusion: string }>;
   // Informational-only (#2137): set when the aggregate resolved to "passed" with no branch-protection required
   // contexts configured (`enforceRequiredOnly` false) — meaning a workflow that never triggers on this commit at
   // all (e.g. path-filtered out, or a broken YAML trigger) is indistinguishable from one that doesn't exist, and
@@ -2796,12 +2817,13 @@ async function reduceLiveCiAggregate(
     checkRuns: ReadonlyArray<LiveCiCheckRun>;
     statuses: ReadonlyArray<LiveCiStatus>;
     requiredContexts: ReadonlySet<string> | null | undefined;
+    advisoryCheckRuns?: ReadonlyArray<{ name: string; appSlug: string }> | null | undefined;
     checkRunsIncomplete: boolean;
     statusIncomplete: boolean;
     fetchSuites: () => Promise<ReadonlyArray<LiveCiSuite> | null>;
   },
 ): Promise<LiveCiAggregate> {
-  const { checkRuns, statuses, requiredContexts, checkRunsIncomplete, statusIncomplete, fetchSuites } = inputs;
+  const { checkRuns, statuses, requiredContexts, advisoryCheckRuns, checkRunsIncomplete, statusIncomplete, fetchSuites } = inputs;
   const enforceRequiredOnly = requiredContexts != null && requiredContexts.size > 0;
   const isRequired = (name: string): boolean => !enforceRequiredOnly || requiredContexts!.has(name);
   // Deliberately the OPPOSITE unknown-case default from isRequired() above, and used ONLY for a third-party
@@ -2819,6 +2841,7 @@ async function reduceLiveCiAggregate(
   const isConfirmedRequired = (name: string): boolean => enforceRequiredOnly && requiredContexts!.has(name);
   const failingDetails: LiveCiAggregate["failingDetails"] = [];
   const nonRequiredFailingDetails: LiveCiAggregate["nonRequiredFailingDetails"] = [];
+  const advisoryHoldDetails: LiveCiAggregate["advisoryHoldDetails"] = [];
   let total = 0;
   let anyPending = false;
   let anyVisiblePending = false;
@@ -2837,6 +2860,21 @@ async function reduceLiveCiAggregate(
     const appSlug = (run.app?.slug ?? "").toLowerCase();
     if (appSlug === "github-actions") sawFirstPartyCheckRun = true;
     if (isOwnGitHubAppCheckRun(env, run)) continue; // never wait on the bot's own Gate/Context check-runs
+    // #4372: a maintainer-declared advisory check-run is fully excluded from the CI aggregate — the SAME way
+    // bot-owned checks are above — so it never gates pass/fail and never counts as "still running" (fixing the
+    // permanent hold a durable non-standard conclusion causes). But it is not silently swallowed: once COMPLETED
+    // with a non-passing conclusion, it is recorded in advisoryHoldDetails so the disposition planner can route
+    // the PR to a manual-review hold. An advisory check still in progress is simply ignored (it may yet pass);
+    // nothing about it holds the gate either way.
+    const advisoryMatch = matchAdvisoryCheckRun(run, advisoryCheckRuns);
+    if (advisoryMatch) {
+      const advisoryConclusion = (run.conclusion ?? "").toLowerCase();
+      const advisoryStatus = (run.status ?? "").toLowerCase();
+      if (advisoryStatus === "completed" && advisoryConclusion !== "" && !CI_PASSING_CONCLUSIONS.has(advisoryConclusion)) {
+        advisoryHoldDetails.push({ name: advisoryMatch.name, appSlug: advisoryMatch.appSlug, conclusion: advisoryConclusion });
+      }
+      continue;
+    }
     total += 1;
     const conclusion = (run.conclusion ?? "").toLowerCase();
     const status = (run.status ?? "").toLowerCase();
@@ -2947,7 +2985,7 @@ async function reduceLiveCiAggregate(
   // A partial/paginated read can't tell "never appears" from "appears on a page we didn't fetch" -- only a
   // COMPLETE read's absence is a confident signal worth a short surfacing cap (#selfhost-ci-deferral-staleness).
   const hasMissingRequiredContext = anyMissingRequiredContext && !checkRunsIncomplete && !statusIncomplete;
-  return { ciState, hasPending, hasVisiblePending: anyRequiredVisiblePending, hasMissingRequiredContext, failingDetails, nonRequiredFailingDetails, ciCompletenessWarning };
+  return { ciState, hasPending, hasVisiblePending: anyRequiredVisiblePending, hasMissingRequiredContext, failingDetails, nonRequiredFailingDetails, advisoryHoldDetails, ciCompletenessWarning };
 }
 
 /**
@@ -2968,8 +3006,11 @@ export async function fetchLiveCiAggregate(
   // Completed red checks/statuses still fail the aggregate even when they are not branch-protection-required.
   requiredContexts?: ReadonlySet<string> | null,
   admissionKey?: GitHubRateLimitAdmissionKey,
+  // #4372: maintainer-declared advisory check-runs (trailing/optional — every existing positional caller passing
+  // requiredContexts+admissionKey stays byte-identical). Excluded from the aggregate; non-passing ⇒ advisoryHoldDetails.
+  advisoryCheckRuns?: ReadonlyArray<{ name: string; appSlug: string }> | null,
 ): Promise<LiveCiAggregate> {
-  if (!headSha) return { ciState: "unverified", hasPending: false, hasVisiblePending: false, hasMissingRequiredContext: false, failingDetails: [], nonRequiredFailingDetails: [], ciCompletenessWarning: null };
+  if (!headSha) return { ciState: "unverified", hasPending: false, hasVisiblePending: false, hasMissingRequiredContext: false, failingDetails: [], nonRequiredFailingDetails: [], advisoryHoldDetails: [], ciCompletenessWarning: null };
   // Check-runs + classic statuses are accumulated across pages here; the single classification lives in
   // reduceLiveCiAggregate so the REST and GraphQL paths reach byte-identical verdicts (#1941).
   const checkRuns: LiveCiCheckRun[] = [];
@@ -3012,6 +3053,7 @@ export async function fetchLiveCiAggregate(
     checkRuns,
     statuses,
     requiredContexts,
+    advisoryCheckRuns,
     checkRunsIncomplete,
     statusIncomplete,
     // Lazily read the check-SUITES backstop only when the reducer finds the cheaper sources fully settled; a fetch
@@ -3051,6 +3093,7 @@ export async function fetchLiveCiAggregateViaGraphQl(
   token: string | undefined,
   requiredContexts?: ReadonlySet<string> | null,
   admissionKey?: GitHubRateLimitAdmissionKey,
+  advisoryCheckRuns?: ReadonlyArray<{ name: string; appSlug: string }> | null,
 ): Promise<LiveCiAggregate | null> {
   if (!headSha || !token) return null;
   const [owner, name] = repoFullName.split("/");
@@ -3130,6 +3173,7 @@ export async function fetchLiveCiAggregateViaGraphQl(
     checkRuns,
     statuses,
     requiredContexts,
+    advisoryCheckRuns,
     checkRunsIncomplete: false,
     statusIncomplete: false,
     fetchSuites: async () => suites, // already fetched in the same query — never a second round-trip
@@ -3149,14 +3193,15 @@ export async function fetchLiveCiAggregatePreferGraphQl(
   token: string | undefined,
   requiredContexts?: ReadonlySet<string> | null,
   admissionKey?: GitHubRateLimitAdmissionKey,
+  advisoryCheckRuns?: ReadonlyArray<{ name: string; appSlug: string }> | null,
 ): Promise<LiveCiAggregate> {
   if (isStatusRollupGraphQlEnabled(env)) {
     // fetchLiveCiAggregateViaGraphQl handles all its own errors and returns null on any uncertainty (it never
     // rejects), so a null result — not a throw — is the fall-back-to-REST signal.
-    const rollup = await fetchLiveCiAggregateViaGraphQl(env, repoFullName, headSha, token, requiredContexts, admissionKey);
+    const rollup = await fetchLiveCiAggregateViaGraphQl(env, repoFullName, headSha, token, requiredContexts, admissionKey, advisoryCheckRuns);
     if (rollup) return rollup;
   }
-  return fetchLiveCiAggregate(env, repoFullName, headSha, token, requiredContexts, admissionKey);
+  return fetchLiveCiAggregate(env, repoFullName, headSha, token, requiredContexts, admissionKey, advisoryCheckRuns);
 }
 
 /**
@@ -3628,6 +3673,12 @@ export function deserializeCachedCiAggregate(
       hasMissingRequiredContext: cached.ciHasMissingRequiredContext ?? false,
       failingDetails,
       nonRequiredFailingDetails,
+      // #4372: advisoryHoldDetails is NOT persisted in the durable cache (no column) — deliberately. The
+      // manual-review routing it drives fires on the fresh, webhook-invalidated live read that populates this
+      // cache entry (an advisory check_run completing invalidates the entry for that head SHA), and the hold
+      // label is applied idempotently there. The exclusion's effect on the disposition (a settled advisory check
+      // no longer holding the gate) DOES round-trip, because it is already baked into the cached `ciState`.
+      advisoryHoldDetails: [],
       ciCompletenessWarning: cached.ciCompletenessWarning ?? null,
     };
   } catch {

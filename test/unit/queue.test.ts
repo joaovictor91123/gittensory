@@ -1806,6 +1806,7 @@ describe("queue processors", () => {
       hasMissingRequiredContext: false,
       failingDetails: [],
       nonRequiredFailingDetails: [],
+      advisoryHoldDetails: [],
       ciCompletenessWarning: null,
     });
     let gateChecks = 0;
@@ -1856,6 +1857,7 @@ describe("queue processors", () => {
       hasMissingRequiredContext: false,
       failingDetails: [],
       nonRequiredFailingDetails: [],
+      advisoryHoldDetails: [],
       ciCompletenessWarning: null,
     });
     let gateChecks = 0;
@@ -1883,6 +1885,7 @@ describe("queue processors", () => {
         expect.any(String),
         new Set(["trusted-required-ci"]),
         "installation:9001",
+        undefined, // #4372: advisoryCheckRuns (unconfigured here)
       );
       expect(gateChecks).toBeGreaterThan(0);
       const finalized = await env.DB.prepare("select count(*) as n from audit_events where event_type = ?")
@@ -1915,6 +1918,7 @@ describe("queue processors", () => {
       hasMissingRequiredContext: false,
       failingDetails: [],
       nonRequiredFailingDetails: [],
+      advisoryHoldDetails: [],
       ciCompletenessWarning: null,
     });
     let gateChecks = 0;
@@ -1991,6 +1995,7 @@ describe("queue processors", () => {
       hasMissingRequiredContext: false,
       failingDetails: [],
       nonRequiredFailingDetails: [],
+      advisoryHoldDetails: [],
       ciCompletenessWarning: null,
     });
     let liveHeadSha = "a7";
@@ -2061,6 +2066,7 @@ describe("queue processors", () => {
       hasMissingRequiredContext: false,
       failingDetails: [],
       nonRequiredFailingDetails: [],
+      advisoryHoldDetails: [],
       ciCompletenessWarning: null,
     });
     let gateChecks = 0;
@@ -2115,6 +2121,7 @@ describe("queue processors", () => {
       hasMissingRequiredContext: false,
       failingDetails: [],
       nonRequiredFailingDetails: [],
+      advisoryHoldDetails: [],
       ciCompletenessWarning: null,
     });
     let gateChecks = 0;
@@ -2177,6 +2184,7 @@ describe("queue processors", () => {
       hasMissingRequiredContext: false,
       failingDetails: [],
       nonRequiredFailingDetails: [],
+      advisoryHoldDetails: [],
       ciCompletenessWarning: null,
     });
     let gateChecks = 0;
@@ -2230,6 +2238,7 @@ describe("queue processors", () => {
       hasMissingRequiredContext: true,
       failingDetails: [],
       nonRequiredFailingDetails: [],
+      advisoryHoldDetails: [],
       ciCompletenessWarning: null,
     });
     let gateChecks = 0;
@@ -2287,6 +2296,7 @@ describe("queue processors", () => {
       hasMissingRequiredContext: true,
       failingDetails: [],
       nonRequiredFailingDetails: [],
+      advisoryHoldDetails: [],
       ciCompletenessWarning: null,
     });
     let gateChecks = 0;
@@ -2336,6 +2346,7 @@ describe("queue processors", () => {
       hasMissingRequiredContext: false,
       failingDetails: [],
       nonRequiredFailingDetails: [],
+      advisoryHoldDetails: [],
       ciCompletenessWarning: "CI resolved to passed with no branch-protection required checks configured — cannot verify every expected workflow ran.",
     });
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -2378,6 +2389,7 @@ describe("queue processors", () => {
       hasMissingRequiredContext: false,
       failingDetails: [],
       nonRequiredFailingDetails: [],
+      advisoryHoldDetails: [],
       ciCompletenessWarning: null,
     });
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -2473,6 +2485,7 @@ describe("queue processors", () => {
         hasMissingRequiredContext: false,
         failingDetails: [],
         nonRequiredFailingDetails: [],
+        advisoryHoldDetails: [],
         ciCompletenessWarning: null,
       });
 
@@ -2649,6 +2662,7 @@ describe("queue processors", () => {
         hasMissingRequiredContext: false,
         failingDetails: [],
         nonRequiredFailingDetails: [],
+        advisoryHoldDetails: [],
         ciCompletenessWarning: null,
       });
       vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -2686,6 +2700,7 @@ describe("queue processors", () => {
         hasMissingRequiredContext: false,
         failingDetails: [],
         nonRequiredFailingDetails: [],
+        advisoryHoldDetails: [],
         ciCompletenessWarning: null,
       });
       vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -2733,6 +2748,7 @@ describe("queue processors", () => {
         hasMissingRequiredContext: false,
         failingDetails: [],
         nonRequiredFailingDetails: [],
+        advisoryHoldDetails: [],
         ciCompletenessWarning: null,
       });
       vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -2792,6 +2808,7 @@ describe("queue processors", () => {
         hasMissingRequiredContext: false,
         failingDetails: [],
         nonRequiredFailingDetails: [],
+        advisoryHoldDetails: [],
         ciCompletenessWarning: null,
       });
       vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -2841,6 +2858,7 @@ describe("queue processors", () => {
         hasMissingRequiredContext: false,
         failingDetails: [],
         nonRequiredFailingDetails: [],
+        advisoryHoldDetails: [],
         ciCompletenessWarning: null,
       });
       let branchProtectionReadable = false;
@@ -2878,7 +2896,8 @@ describe("queue processors", () => {
         await processJob(env, { type: "agent-regate-pr", deliveryId: "required-contexts-lookup-recovers", repoFullName: "owner/agent-repo", prNumber: 7, installationId: 9001 });
         expect(liveCiSpy.mock.calls.length).toBeGreaterThan(liveReadsAfterFailedLookup);
         expect(await renderMetrics()).toContain('loopover_ci_state_cache_total{field="aggregate",result="miss"} 1');
-        expect(await getPullRequestDetailSyncState(env, "owner/agent-repo", 7)).toMatchObject({ ciState: "passed", ciRequiredContextsKey: JSON.stringify(["trusted-required-ci"]) });
+        // #4372: the durable cache key now folds in the advisory-check-runs fingerprint (empty "|adv:" when unconfigured).
+        expect(await getPullRequestDetailSyncState(env, "owner/agent-repo", 7)).toMatchObject({ ciState: "passed", ciRequiredContextsKey: `${JSON.stringify(["trusted-required-ci"])}|adv:` });
       } finally {
         liveCiSpy.mockRestore();
       }
@@ -2901,6 +2920,7 @@ describe("queue processors", () => {
         hasMissingRequiredContext: false,
         failingDetails: [],
         nonRequiredFailingDetails: [],
+        advisoryHoldDetails: [],
         ciCompletenessWarning: null,
       });
       vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {

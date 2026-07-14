@@ -802,6 +802,16 @@ export type RepositorySettings = {
    *  ⇒ verified passed (no `ciCompletenessWarning`). Config-as-code only — no DB column; set via
    *  `.loopover.yml gate.expectedCiContexts`. */
   expectedCiContexts?: ReadonlyArray<string> | null | undefined;
+  /** `gate.advisoryCheckRuns` (#4372): third-party check-runs to treat as advisory — each `{ name, appSlug }`
+   *  matched by name and trusted only when produced by that app slug (spoof-resistant, mirroring
+   *  {@link claCheckRunName}/{@link claCheckRunAppSlug}). A matched, COMPLETED run is excluded from the live-CI
+   *  aggregate entirely (never gates pass/fail, never counts as "still running"), fixing the permanent hold a
+   *  durable non-standard conclusion (e.g. a scanner's terminal `action_required`) would otherwise cause; a
+   *  non-passing conclusion (not `success`/`neutral`/`skipped`) instead routes the PR to the manual-review hold
+   *  with the triggering check surfaced. Generic and config-only — no vendor name is hardcoded in behavior;
+   *  `null`/absent/empty ⇒ byte-identical to today for every repo that doesn't opt in. Config-as-code only —
+   *  no DB column; set via `.loopover.yml gate.advisoryCheckRuns`. */
+  advisoryCheckRuns?: ReadonlyArray<{ name: string; appSlug: string }> | null | undefined;
   /** Dry-run disposition (#gate-dryrun). When true, the gate renders the would-be merge/close/manual verdict (every
    *  advisory sub-gate promoted to block) WITHOUT enforcing — the posted check stays non-blocking. Lets advisory mode
    *  preview exactly what it would do before the maintainer flips to real enforcement. Default off.

@@ -28,6 +28,7 @@ describe("cachedLiveCiAggregate request-scoped memoization (#4498)", () => {
       hasMissingRequiredContext: false,
       failingDetails: [],
       nonRequiredFailingDetails: [],
+      advisoryHoldDetails: [],
       ciCompletenessWarning: null,
     });
     const facts = emptyFacts();
@@ -41,6 +42,7 @@ describe("cachedLiveCiAggregate request-scoped memoization (#4498)", () => {
       baseRef: null,
       token: "tok",
       expectedCiContexts: null,
+      advisoryCheckRuns: null,
     };
 
     const first = await cachedLiveCiAggregate(env, args);
@@ -48,5 +50,32 @@ describe("cachedLiveCiAggregate request-scoped memoization (#4498)", () => {
 
     expect(second).toEqual(first);
     expect(liveCiSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("#4372: a DIFFERENT advisoryCheckRuns config produces a DIFFERENT cache key, so the aggregate is re-fetched (a config change never serves a stale entry)", async () => {
+    const env = createTestEnv();
+    const liveCiSpy = vi.spyOn(backfillModule, "fetchLiveCiAggregatePreferGraphQl").mockResolvedValue({
+      ciState: "passed",
+      hasPending: false,
+      hasVisiblePending: false,
+      hasMissingRequiredContext: false,
+      failingDetails: [],
+      nonRequiredFailingDetails: [],
+      advisoryHoldDetails: [],
+      ciCompletenessWarning: null,
+    });
+    const facts = emptyFacts();
+    const base = { repoFullName: "owner/repo", facts, prNumber: 7, headSha: "abc123", baseRef: null, token: "tok", expectedCiContexts: null };
+
+    await cachedLiveCiAggregate(env, { ...base, advisoryCheckRuns: null });
+    await cachedLiveCiAggregate(env, { ...base, advisoryCheckRuns: [{ name: "Third-Party Scan", appSlug: "example-scanner" }] });
+    // Distinct advisory config ⇒ distinct key ⇒ two live fetches (not one memoized).
+    expect(liveCiSpy).toHaveBeenCalledTimes(2);
+
+    // The SAME advisory config in a different order still collapses to one key (order-independent fingerprint).
+    const twoEntry = [{ name: "A", appSlug: "app-a" }, { name: "B", appSlug: "app-b" }];
+    await cachedLiveCiAggregate(env, { ...base, advisoryCheckRuns: twoEntry });
+    await cachedLiveCiAggregate(env, { ...base, advisoryCheckRuns: [...twoEntry].reverse() });
+    expect(liveCiSpy).toHaveBeenCalledTimes(3); // +1 only, the reversed list reused the key
   });
 });

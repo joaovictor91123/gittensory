@@ -176,6 +176,11 @@ export type AgentActionExecutionContext = {
   // must honor the SAME branch-protection-plus-expected required-contexts view the planning pass already
   // evaluated against. Absent/undefined ⇒ fold-all mode, unchanged from before this field existed.
   requiredCiContexts?: ReadonlySet<string> | null | undefined;
+  // settings.advisoryCheckRuns (#4372), resolved by the CALLER (same "no settings access" shape as
+  // requiredCiContexts above): the step-8 live-CI re-verification must apply the SAME advisory-check-run
+  // exclusion the planning pass used — otherwise the executor could see a maintainer-declared advisory check as
+  // failing/pending and block a merge the planner already cleared. Absent ⇒ exclusion off, unchanged from before.
+  advisoryCheckRuns?: ReadonlyArray<{ name: string; appSlug: string }> | null | undefined;
   // settings.manualReviewLabel (#3472 split-brain), resolved by the CALLER (same "the executor has no settings
   // access" shape as requiredCiContexts above): the approve/merge live label guard (step 7b below) needs the
   // SAME configured label name the planner itself resolves labels.manualReview from (agent-actions.ts), so a
@@ -422,7 +427,7 @@ export async function executeAgentMaintenanceActions(env: Env, ctx: AgentActionE
       const admissionKey = githubRateLimitAdmissionKeyForToken(env, ciToken, ctx.installationId);
       const [liveCi, liveMergeableState, liveThreadBlockers, liveWinnerState] = await Promise.all([
         requiresLiveCiRecheck
-          ? fetchLiveCiAggregate(env, ctx.repoFullName, expectedHeadSha, ciToken, ctx.requiredCiContexts ?? null, admissionKey)
+          ? fetchLiveCiAggregate(env, ctx.repoFullName, expectedHeadSha, ciToken, ctx.requiredCiContexts ?? null, admissionKey, ctx.advisoryCheckRuns ?? null)
           : Promise.resolve(undefined),
         requiresLiveMergeableRecheck ? fetchLivePullRequestMergeState(env, ctx.repoFullName, ctx.pullNumber, ciToken, admissionKey) : Promise.resolve(undefined),
         requiresLiveThreadRecheck ? fetchLiveReviewThreadBlockers(env, ctx.repoFullName, ctx.pullNumber, ciToken, admissionKey) : Promise.resolve(undefined),

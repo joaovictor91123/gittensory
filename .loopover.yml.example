@@ -252,6 +252,23 @@ gate:
     - build
     - test
 
+  # Third-party check-runs to treat as ADVISORY (#4372). Any GitHub App you install alongside gittensory
+  # (a security scanner, a contributor-trust analyzer, a license/CLA bot, ...) can post a check-run whose
+  # terminal conclusion is outside GitHub's normal pass/fail vocabulary — most commonly a durable
+  # "action_required" that only a human can clear in that app's own UI, never on GitHub. Left alone, such a
+  # check freezes the gate: it never turns green, so the PR is held pending forever with no signal. List the
+  # check here (matched by name AND the trusted producing app slug — a name-only match is spoofable and is
+  # ignored, exactly like cla.checkRunAppSlug) to make it advisory: a matched, COMPLETED run is excluded from
+  # CI pass/fail entirely and never counts as "still running", so it can never block or stall the gate. It is
+  # NOT silently swallowed either — a non-passing conclusion routes the PR to the manual-review hold (the
+  # manualReviewLabel) with the triggering check/app named, so a maintainer can act on it. Generic: name the
+  # app(s) YOU run; gittensory hardcodes no vendor. List of { name, appSlug }, or omit. Default: not
+  # configured (byte-identical behavior for every repo that doesn't opt in). Config-as-code only — no DB
+  # column or dashboard toggle.
+  advisoryCheckRuns:
+    - name: Contributor trust
+      appSlug: example-security-app
+
   # Promote a confident AI-judgment-only finding (one the reviewer itself placed under "Blockers", never
   # a "Nit") into a real, deterministic gate blocker instead of leaving it advisory (#3907). Only matters
   # for repos already running the registry content lane (see contentLane below) — content/registry repos

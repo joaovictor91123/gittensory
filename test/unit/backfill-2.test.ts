@@ -198,7 +198,7 @@ describe("GitHub backfill", () => {
 
       const aggregate = await fetchLiveCiAggregate(env, "JSONbored/gittensory", null, "public-token", null);
 
-      expect(aggregate).toEqual({ ciState: "unverified", hasPending: false, hasVisiblePending: false, hasMissingRequiredContext: false, failingDetails: [], nonRequiredFailingDetails: [], ciCompletenessWarning: null });
+      expect(aggregate).toEqual({ ciState: "unverified", hasPending: false, hasVisiblePending: false, hasMissingRequiredContext: false, failingDetails: [], nonRequiredFailingDetails: [], advisoryHoldDetails: [], ciCompletenessWarning: null });
       expect(fetchSpy).not.toHaveBeenCalled();
     });
 
@@ -365,6 +365,117 @@ describe("GitHub backfill", () => {
       expect(aggregate.nonRequiredFailingDetails).toEqual([
         { name: "Contributor trust", summary: "Manual review needed", detailsUrl: "https://superagent.example/checks/contributor-trust" },
       ]);
+    });
+
+    // #4372: maintainer-declared advisory check-runs. Uses SYNTHETIC names ("Third-Party Scan" / "example-scanner"),
+    // never a real vendor, so the suite itself hardcodes no third party.
+    const ADVISORY_CONFIG = [{ name: "Third-Party Scan", appSlug: "example-scanner" }];
+    const stubChecks = (runs: Array<Record<string, unknown>>) =>
+      vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+        const url = input.toString();
+        if (url.includes("/check-runs?")) return Response.json({ check_runs: runs });
+        if (url.includes("/status?")) return Response.json({ statuses: [] });
+        if (url.includes("/check-suites?")) return Response.json({ check_suites: [{ status: "completed", app: { slug: "github-actions" } }] });
+        return new Response("not found", { status: 404 });
+      });
+
+    it("#4372: a configured advisory check-run that is COMPLETED with a non-passing conclusion is excluded from CI pass/fail (never stalls the gate) and surfaced in advisoryHoldDetails", async () => {
+      const env = createTestEnv({ GITHUB_PUBLIC_TOKEN: "public-token" });
+      // The advisory check IS listed as a required branch-protection context here — proving that even a REQUIRED
+      // durable action_required no longer fails/stalls the gate once declared advisory (the exact #4372 bug).
+      stubChecks([
+        { name: "validate", status: "completed", conclusion: "success", app: { slug: "github-actions" } },
+        { name: "Third-Party Scan", status: "completed", conclusion: "action_required", app: { slug: "example-scanner" } },
+      ]);
+      const aggregate = await fetchLiveCiAggregate(env, "acme/widget", "sha1", "public-token", new Set(["validate", "Third-Party Scan"]), undefined, ADVISORY_CONFIG);
+      expect(aggregate.ciState).toBe("passed"); // excluded → not failed, not pending
+      expect(aggregate.hasPending).toBe(false);
+      expect(aggregate.failingDetails).toEqual([]);
+      expect(aggregate.nonRequiredFailingDetails).toEqual([]);
+      expect(aggregate.advisoryHoldDetails).toEqual([{ name: "Third-Party Scan", appSlug: "example-scanner", conclusion: "action_required" }]);
+    });
+
+    it("#4372: a configured advisory check-run that COMPLETED with a passing conclusion is excluded but raises NO hold", async () => {
+      const env = createTestEnv({ GITHUB_PUBLIC_TOKEN: "public-token" });
+      stubChecks([
+        { name: "validate", status: "completed", conclusion: "success", app: { slug: "github-actions" } },
+        { name: "Third-Party Scan", status: "completed", conclusion: "neutral", app: { slug: "example-scanner" } },
+      ]);
+      const aggregate = await fetchLiveCiAggregate(env, "acme/widget", "sha2", "public-token", new Set(["validate"]), undefined, ADVISORY_CONFIG);
+      expect(aggregate.ciState).toBe("passed");
+      expect(aggregate.advisoryHoldDetails).toEqual([]);
+    });
+
+    it("#4372: a configured advisory check-run still IN PROGRESS is excluded — it never counts as 'still running' and raises no hold yet", async () => {
+      const env = createTestEnv({ GITHUB_PUBLIC_TOKEN: "public-token" });
+      stubChecks([
+        { name: "validate", status: "completed", conclusion: "success", app: { slug: "github-actions" } },
+        { name: "Third-Party Scan", status: "in_progress", conclusion: null, app: { slug: "example-scanner" } },
+      ]);
+      const aggregate = await fetchLiveCiAggregate(env, "acme/widget", "sha3", "public-token", new Set(["validate"]), undefined, ADVISORY_CONFIG);
+      expect(aggregate.ciState).toBe("passed"); // not "pending" despite the in-progress advisory check
+      expect(aggregate.hasPending).toBe(false);
+      expect(aggregate.advisoryHoldDetails).toEqual([]);
+    });
+
+    it("#4372: a check whose NAME matches but is produced by a DIFFERENT app slug is NOT treated as advisory (spoof-resistant) — it falls through to normal handling", async () => {
+      const env = createTestEnv({ GITHUB_PUBLIC_TOKEN: "public-token" });
+      stubChecks([
+        { name: "validate", status: "completed", conclusion: "success", app: { slug: "github-actions" } },
+        // Same name, WRONG app → not advisory. A completed red conclusion from a non-github-actions app on a
+        // required context is a normal failure, so this proves the mismatch path does not silently exclude it.
+        { name: "Third-Party Scan", status: "completed", conclusion: "failure", app: { slug: "impostor-app" } },
+      ]);
+      const aggregate = await fetchLiveCiAggregate(env, "acme/widget", "sha4", "public-token", new Set(["validate", "Third-Party Scan"]), undefined, ADVISORY_CONFIG);
+      expect(aggregate.ciState).toBe("failed");
+      expect(aggregate.failingDetails).toEqual([{ name: "Third-Party Scan" }]);
+      expect(aggregate.advisoryHoldDetails).toEqual([]);
+    });
+
+    it("#4372: with NO advisoryCheckRuns configured, behavior is byte-identical to today (the check is not excluded)", async () => {
+      const env = createTestEnv({ GITHUB_PUBLIC_TOKEN: "public-token" });
+      stubChecks([
+        { name: "validate", status: "completed", conclusion: "success", app: { slug: "github-actions" } },
+        { name: "Third-Party Scan", status: "completed", conclusion: "failure", app: { slug: "example-scanner" } },
+      ]);
+      // No 7th arg → advisoryCheckRuns undefined → matcher short-circuits, the check fails the gate as before.
+      const aggregate = await fetchLiveCiAggregate(env, "acme/widget", "sha5", "public-token", new Set(["validate", "Third-Party Scan"]));
+      expect(aggregate.ciState).toBe("failed");
+      expect(aggregate.advisoryHoldDetails).toEqual([]);
+    });
+
+    it("#4372: a run whose NAME matches but carries NO producing app slug is NOT treated as advisory (a name-only match is spoofable)", async () => {
+      const env = createTestEnv({ GITHUB_PUBLIC_TOKEN: "public-token" });
+      stubChecks([
+        { name: "validate", status: "completed", conclusion: "success", app: { slug: "github-actions" } },
+        // Same name as the configured advisory entry, but no `app` → no trusted slug → not advisory → normal failure.
+        { name: "Third-Party Scan", status: "completed", conclusion: "failure" },
+      ]);
+      const aggregate = await fetchLiveCiAggregate(env, "acme/widget", "sha6", "public-token", new Set(["validate", "Third-Party Scan"]), undefined, ADVISORY_CONFIG);
+      expect(aggregate.ciState).toBe("failed");
+      expect(aggregate.advisoryHoldDetails).toEqual([]);
+    });
+
+    it("#4372: a matched advisory run COMPLETED with NO conclusion is excluded and raises no hold (defensive: null must not push an empty conclusion)", async () => {
+      const env = createTestEnv({ GITHUB_PUBLIC_TOKEN: "public-token" });
+      stubChecks([
+        { name: "validate", status: "completed", conclusion: "success", app: { slug: "github-actions" } },
+        { name: "Third-Party Scan", status: "completed", conclusion: null, app: { slug: "example-scanner" } },
+      ]);
+      const aggregate = await fetchLiveCiAggregate(env, "acme/widget", "sha7", "public-token", new Set(["validate"]), undefined, ADVISORY_CONFIG);
+      expect(aggregate.ciState).toBe("passed"); // excluded, not pending
+      expect(aggregate.advisoryHoldDetails).toEqual([]); // empty conclusion ⇒ no hold pushed
+    });
+
+    it("#4372: a matched advisory run with NO status field is excluded and raises no hold (defensive nullish handling)", async () => {
+      const env = createTestEnv({ GITHUB_PUBLIC_TOKEN: "public-token" });
+      stubChecks([
+        { name: "validate", status: "completed", conclusion: "success", app: { slug: "github-actions" } },
+        { name: "Third-Party Scan", conclusion: "failure", app: { slug: "example-scanner" } }, // no `status` → "" ≠ "completed"
+      ]);
+      const aggregate = await fetchLiveCiAggregate(env, "acme/widget", "sha8", "public-token", new Set(["validate"]), undefined, ADVISORY_CONFIG);
+      expect(aggregate.ciState).toBe("passed"); // excluded (not "completed" ⇒ no hold, still never gates)
+      expect(aggregate.advisoryHoldDetails).toEqual([]);
     });
 
     it("REGRESSION (#4812): a third-party action_required check-run on a repo with NO branch-protection required contexts configured at all is still non-blocking, not folded into failingDetails by the 'assume required when unknown' fallback", async () => {

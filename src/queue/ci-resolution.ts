@@ -64,6 +64,15 @@ function resolvedRequiredContextsKeyPart(requiredContexts: ReadonlySet<string> |
   return JSON.stringify([...requiredContexts].sort());
 }
 
+// #4372: stable, order-independent cache-key fragment for settings.advisoryCheckRuns. The advisory list changes
+// the aggregate (which checks are excluded from ciState/hasPending), so a config change must invalidate both the
+// request-scoped memo AND the durable cross-job CI-state cache — otherwise a stale entry from before the change
+// would keep gating on (or excluding) the wrong checks. Two equal lists in any order collapse to one key.
+function advisoryCheckRunsKeyPart(advisoryCheckRuns: ReadonlyArray<{ name: string; appSlug: string }> | null | undefined): string {
+  if (!advisoryCheckRuns || advisoryCheckRuns.length === 0) return "";
+  return JSON.stringify(advisoryCheckRuns.map((c) => `${c.name}\0${c.appSlug}`).sort());
+}
+
 // RC2 + #selfhost-ci-verification: the EFFECTIVE required-status-check contexts for this repo/baseRef, merging
 // live branch-protection required contexts with the maintainer-configured settings.expectedCiContexts fallback
 // (mergeRequiredCiContexts — branch protection stays authoritative when readable; expectedCiContexts is the
@@ -141,6 +150,7 @@ async function cachedFetchLiveCiAggregate(
     token: string | undefined;
     requiredContexts: ReadonlySet<string> | null | undefined;
     requiredContextsKey: string;
+    advisoryCheckRuns: ReadonlyArray<{ name: string; appSlug: string }> | null | undefined;
     forceRefresh: boolean;
     // False when the caller's own required-context lookup FAILED (not merely resolved to "none configured") --
     // that fail-open aggregate must never be persisted under the normal key, or a transient lookup error would
@@ -159,7 +169,7 @@ async function cachedFetchLiveCiAggregate(
     }
   }
   incr(CI_STATE_CACHE_METRIC, { field: "aggregate", result: args.forceRefresh ? "forced" : "miss" });
-  const live = await fetchLiveCiAggregatePreferGraphQl(env, args.repoFullName, args.headSha, args.token, args.requiredContexts, args.admissionKey);
+  const live = await fetchLiveCiAggregatePreferGraphQl(env, args.repoFullName, args.headSha, args.token, args.requiredContexts, args.admissionKey, args.advisoryCheckRuns);
   if (args.requiredContextsResolved) {
     await writeThroughCiStateCache(env, args.repoFullName, args.prNumber, cached, args.headSha, args.requiredContextsKey, live);
   }
@@ -176,6 +186,7 @@ function fetchLiveCiAggregateWithRequiredContexts(
     baseRef: string | null | undefined;
     token: string | undefined;
     expectedCiContexts: ReadonlyArray<string> | null | undefined;
+    advisoryCheckRuns: ReadonlyArray<{ name: string; appSlug: string }> | null | undefined;
     forceRefresh: boolean;
     admissionKey?: GitHubRateLimitAdmissionKey | undefined;
   },
@@ -194,7 +205,11 @@ function fetchLiveCiAggregateWithRequiredContexts(
         headSha: args.headSha,
         token: args.token,
         requiredContexts,
-        requiredContextsKey: resolvedRequiredContextsKeyPart(requiredContexts),
+        // #4372: the advisory-check-runs config changes the aggregate but is NOT part of the resolved required
+        // contexts, so fold its fingerprint into the durable cache key alongside them — else a config change
+        // would keep serving a stale aggregate computed against the old advisory list.
+        requiredContextsKey: `${resolvedRequiredContextsKeyPart(requiredContexts)}|adv:${advisoryCheckRunsKeyPart(args.advisoryCheckRuns)}`,
+        advisoryCheckRuns: args.advisoryCheckRuns,
         forceRefresh: args.forceRefresh,
         requiredContextsResolved: resolved,
         admissionKey: args.admissionKey,
@@ -212,10 +227,11 @@ export function cachedLiveCiAggregate(
     baseRef: string | null | undefined;
     token: string | undefined;
     expectedCiContexts: ReadonlyArray<string> | null | undefined;
+    advisoryCheckRuns: ReadonlyArray<{ name: string; appSlug: string }> | null | undefined;
     admissionKey?: GitHubRateLimitAdmissionKey | undefined;
   },
 ): Promise<LiveCiAggregate> {
-  const key = liveFactKey(args.repoFullName, args.headSha, args.baseRef, liveFactTokenPart(args.token), expectedCiContextsKeyPart(args.expectedCiContexts));
+  const key = liveFactKey(args.repoFullName, args.headSha, args.baseRef, liveFactTokenPart(args.token), `${expectedCiContextsKeyPart(args.expectedCiContexts)}|adv:${advisoryCheckRunsKeyPart(args.advisoryCheckRuns)}`);
   const cached = args.facts.ciAggregates.get(key);
   if (cached) return cached;
   const next = evictLiveFactOnReject(
@@ -229,6 +245,7 @@ export function cachedLiveCiAggregate(
       baseRef: args.baseRef,
       token: args.token,
       expectedCiContexts: args.expectedCiContexts,
+      advisoryCheckRuns: args.advisoryCheckRuns,
       forceRefresh: false,
       admissionKey: args.admissionKey,
     }),
@@ -247,10 +264,11 @@ export function refreshLiveCiAggregate(
     baseRef: string | null | undefined;
     token: string | undefined;
     expectedCiContexts: ReadonlyArray<string> | null | undefined;
+    advisoryCheckRuns: ReadonlyArray<{ name: string; appSlug: string }> | null | undefined;
     admissionKey?: GitHubRateLimitAdmissionKey | undefined;
   },
 ): Promise<LiveCiAggregate> {
-  const key = liveFactKey(args.repoFullName, args.headSha, args.baseRef, liveFactTokenPart(args.token), expectedCiContextsKeyPart(args.expectedCiContexts));
+  const key = liveFactKey(args.repoFullName, args.headSha, args.baseRef, liveFactTokenPart(args.token), `${expectedCiContextsKeyPart(args.expectedCiContexts)}|adv:${advisoryCheckRunsKeyPart(args.advisoryCheckRuns)}`);
   const next = evictLiveFactOnReject(
     args.facts.ciAggregates,
     key,
@@ -262,6 +280,7 @@ export function refreshLiveCiAggregate(
       baseRef: args.baseRef,
       token: args.token,
       expectedCiContexts: args.expectedCiContexts,
+      advisoryCheckRuns: args.advisoryCheckRuns,
       forceRefresh: true,
       admissionKey: args.admissionKey,
     }),
@@ -355,9 +374,12 @@ export function reuseOrRefreshLiveCiAggregate(
   token: string | undefined,
   expectedCiContexts: ReadonlyArray<string> | null | undefined,
   admissionKey?: GitHubRateLimitAdmissionKey,
+  // #4372: trailing/optional so existing positional callers stay byte-identical (advisoryCheckRuns undefined ⇒
+  // exclusion off, today's behavior). Folded into the memo key alongside expectedCiContexts, like the entry points.
+  advisoryCheckRuns?: ReadonlyArray<{ name: string; appSlug: string }> | null,
 ): Promise<LiveCiAggregate> {
-  const key = liveFactKey(repoFullName, headSha, baseRef, liveFactTokenPart(token), expectedCiContextsKeyPart(expectedCiContexts));
+  const key = liveFactKey(repoFullName, headSha, baseRef, liveFactTokenPart(token), `${expectedCiContextsKeyPart(expectedCiContexts)}|adv:${advisoryCheckRunsKeyPart(advisoryCheckRuns)}`);
   const cached = facts.forcedCiAggregateKeys.has(key) ? facts.ciAggregates.get(key) : undefined;
   if (cached) return cached;
-  return refreshLiveCiAggregate(env, { repoFullName, facts, prNumber, headSha, baseRef, token, expectedCiContexts, admissionKey });
+  return refreshLiveCiAggregate(env, { repoFullName, facts, prNumber, headSha, baseRef, token, expectedCiContexts, advisoryCheckRuns, admissionKey });
 }

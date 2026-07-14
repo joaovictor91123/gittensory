@@ -517,6 +517,33 @@ describe("planAgentMaintenanceActions (#778)", () => {
     });
   });
 
+  describe("advisory check-run hold: a maintainer-declared gate.advisoryCheckRuns entry concluded non-passing (#4372)", () => {
+    // Synthetic name/app — never a real vendor — so the suite hardcodes no third party.
+    const advisoryHold = { advisoryCheckHold: [{ name: "Third-Party Scan", appSlug: "example-scanner", conclusion: "action_required" }] };
+
+    it("does NOT auto-merge (and never closes) a clean+approved+passing PR when an advisory check-run hold is present", () => {
+      const plan = classes(planAgentMaintenanceActions(input({ conclusion: "success", autonomy: { merge: "auto", close: "auto" }, ...advisoryHold, pr: { labels: [], mergeableState: "clean", reviewDecision: "APPROVED" } })));
+      expect(plan).not.toContain("merge");
+      expect(plan).not.toContain("close"); // advisory hold only downgrades a would-merge into a hold, never closes
+    });
+
+    it("labels the PR manual-review with a reason + comment naming the triggering check/app/conclusion", () => {
+      const plan = planAgentMaintenanceActions(input({ conclusion: "success", autonomy: { review_state_label: "auto", merge: "auto" }, manualReviewLabel: "human-review", ...advisoryHold, pr: { labels: [], mergeableState: "clean", reviewDecision: "APPROVED" } }));
+      const label = plan.find((a) => a.actionClass === "label");
+      expect(label?.label).toBe("human-review");
+      expect(label?.reason).toContain("Third-Party Scan");
+      expect(label?.reason).toContain("example-scanner");
+      expect(label?.reason).toContain("action_required");
+      expect(label?.comment).toContain("Third-Party Scan");
+      expect(classes(plan)).not.toContain("merge");
+    });
+
+    it("an EMPTY advisoryCheckHold array does not hold — a clean+approved+passing PR still auto-merges", () => {
+      const plan = classes(planAgentMaintenanceActions(input({ conclusion: "success", autonomy: { merge: "auto" }, advisoryCheckHold: [], pr: { labels: [], mergeableState: "clean", reviewDecision: "APPROVED" } })));
+      expect(plan).toContain("merge");
+    });
+  });
+
   describe("live migration-collision hold: a live premerge recheck found a same-numbered sibling on the base branch (#2550)", () => {
     const collided = { migrationCollisionHold: { reason: "live migrations/** collision on main (0090: 0090_a.sql, 0090_b.sql)", comment: "LoopOver: a live check found a migration-number collision. Please rebase." } };
 

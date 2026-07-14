@@ -2424,6 +2424,12 @@ function buildAgentMaintenancePlanInput(args: {
     ciHasPending: ciAggregate.hasPending,
     failingCheckNames: ciAggregate.failingDetails.map((detail) => detail.name),
     ciRequiredContextsVerified: hasVerifiedRequiredContexts(requiredContexts),
+    // #4372: any maintainer-declared advisory check-run that resolved to a non-passing terminal conclusion. It
+    // never gated CI (excluded from ciState above), but it must not be silently swallowed — surface it so the
+    // planner routes the PR to a manual-review HOLD naming the triggering check/app. Always threaded (the
+    // aggregate's field is always an array, [] when none); the planner applies its own length>0 gate, matching
+    // how failingCheckNames above is likewise threaded unconditionally.
+    advisoryCheckHold: ciAggregate.advisoryHoldDetails,
     ...(blacklistEntry !== null
       ? { blacklistMatch: { matched: true, reason: blacklistEntry.reason } }
       : {}),
@@ -2560,6 +2566,7 @@ async function runAgentMaintenancePlanAndExecute(
     token,
     settings.expectedCiContexts,
     admissionKey,
+    settings.advisoryCheckRuns,
   );
   // #2137: informational-only nudge for the operator — never affects the disposition below (ciState is
   // unchanged). recordAuditEvent is a DB write with its own internal failure handling; a failure here must
@@ -3127,6 +3134,7 @@ async function runAgentMaintenancePlanAndExecute(
       // merge or a CI-driven close) must honor the same effective branch-protection-plus-expected contexts this
       // plan was evaluated against, or the two can disagree on ciState.
       requiredCiContexts: requiredContexts,
+      advisoryCheckRuns: settings.advisoryCheckRuns, // #4372: same exclusion the plan used, for step-8 re-verify
       // #3472 split-brain: the executor's own live manual-review hold guard (immediately before approve/merge)
       // must check the SAME configured label the planner itself resolves labels.manualReview from.
       manualReviewLabel: settings.manualReviewLabel,
@@ -3481,6 +3489,7 @@ async function prReadyForReview(
     baseRef: pr.baseRef,
     token,
     expectedCiContexts: settings.expectedCiContexts,
+    advisoryCheckRuns: settings.advisoryCheckRuns,
     admissionKey,
   }).catch(() => undefined);
   if (ci?.hasPending) {
@@ -7441,6 +7450,7 @@ async function resolveManifestPassedValidationCount(
     baseRef: string | null | undefined;
     body: string | null | undefined;
     expectedCiContexts: ReadonlyArray<string> | null | undefined;
+    advisoryCheckRuns: ReadonlyArray<{ name: string; appSlug: string }> | null | undefined;
     liveFacts: LiveGithubFacts;
     testExpectationsConfigured: boolean;
     testFileCount: number;
@@ -7467,6 +7477,7 @@ async function resolveManifestPassedValidationCount(
     baseRef: args.baseRef,
     token,
     expectedCiContexts: args.expectedCiContexts,
+    advisoryCheckRuns: args.advisoryCheckRuns,
     admissionKey,
   });
   return liveCi.ciState === "passed" ? 1 : 0;
@@ -7528,6 +7539,7 @@ async function maybeApplyManifestPolicyGate(
       baseRef: args.pr.baseRef ?? args.repo?.defaultBranch,
       body: args.pr.body,
       expectedCiContexts: args.settings.expectedCiContexts,
+      advisoryCheckRuns: args.settings.advisoryCheckRuns,
       liveFacts: args.webhook.liveFacts,
       testExpectationsConfigured: manifest.testExpectations.length > 0,
       testFileCount,
@@ -9971,6 +9983,7 @@ async function maybePublishPrPublicSurface(
         baseRef,
         token,
         expectedCiContexts: settings.expectedCiContexts,
+        advisoryCheckRuns: settings.advisoryCheckRuns,
         admissionKey,
       });
       // Live merge-state too — the SAME source the disposition uses (planAgentMaintenanceActions reads liveMergeState).

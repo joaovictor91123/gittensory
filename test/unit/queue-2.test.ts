@@ -1900,6 +1900,7 @@ describe("queue processors", () => {
       hasMissingRequiredContext: true,
       failingDetails: [],
       nonRequiredFailingDetails: [],
+      advisoryHoldDetails: [],
       ciCompletenessWarning: null,
     });
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {

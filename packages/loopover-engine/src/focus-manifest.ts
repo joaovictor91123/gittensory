@@ -186,6 +186,15 @@ export type FocusManifestGateConfig = {
    *  (unset) ⇒ no generic fallback configured — the live-CI aggregate keeps today's fold-all behavior
    *  when branch protection is also unreadable. See {@link RepositorySettings.expectedCiContexts}. */
   expectedCiContexts: ReadonlyArray<string> | null;
+  /** `gate.advisoryCheckRuns` (#4372): third-party check-runs (a security scanner, a contributor-trust
+   *  analyzer, etc.) whose terminal conclusion may be outside GitHub's pass/fail vocabulary (e.g. a durable
+   *  `action_required`). Each `{ name, appSlug }` is matched by name and trusted only when produced by that
+   *  app slug — the same spoof-resistant pattern as `cla.checkRunName`/`checkRunAppSlug`. A matched, COMPLETED
+   *  run is excluded from the live-CI aggregate (never gates pass/fail, never counts as "still running"); a
+   *  non-passing conclusion routes the PR to the manual-review hold instead of being swallowed. Generic and
+   *  config-only — no vendor name is ever hardcoded in behavior. null/empty (unset) ⇒ byte-identical to today.
+   *  See {@link RepositorySettings.advisoryCheckRuns}. */
+  advisoryCheckRuns: ReadonlyArray<{ name: string; appSlug: string }> | null;
   /** `gate.aiJudgmentBlockers` (#3907): "gate" | "advisory", null (unset) ⇒ "advisory" (byte-identical to
    *  today everywhere that doesn't opt in). Config-as-code only, YML-only (no DB column, no dashboard
    *  toggle) — mirrors `contentLane`'s own YML-only shape, since this only has an effect for repos already
@@ -996,6 +1005,7 @@ const EMPTY_GATE_CONFIG: FocusManifestGateConfig = {
   claCheckRunName: null,
   claCheckRunAppSlug: null,
   expectedCiContexts: null,
+  advisoryCheckRuns: null,
   aiJudgmentBlockersMode: null,
   copycatMode: null,
   copycatMinScore: null,
@@ -1280,6 +1290,46 @@ function normalizeOptionalReviewers(
   return out.length > 0 ? out : null;
 }
 
+const MAX_ADVISORY_CHECK_RUNS = 16;
+
+/**
+ * Normalize `gate.advisoryCheckRuns` (#4372): a list of `{ name, appSlug }` pairs identifying third-party
+ * check-runs to treat as advisory. Both fields are required non-empty strings — `appSlug` is mandatory (not
+ * optional like the reviewers `fallback`) for the same reason the CLA path requires it: matching a check-run
+ * by name alone is spoofable, so an entry missing its trusted app slug is dropped rather than trusted.
+ */
+function normalizeOptionalAdvisoryCheckRuns(
+  value: JsonValue | undefined,
+  field: string,
+  warnings: string[],
+): ReadonlyArray<{ name: string; appSlug: string }> | null {
+  if (value === undefined || value === null) return null;
+  if (!Array.isArray(value)) {
+    warnings.push(`Manifest gate field "${field}" must be a list of { name, appSlug }; ignoring it.`);
+    return null;
+  }
+  const out: Array<{ name: string; appSlug: string }> = [];
+  for (const [index, entry] of value.entries()) {
+    if (out.length >= MAX_ADVISORY_CHECK_RUNS) {
+      warnings.push(`Manifest gate field "${field}" is capped at ${MAX_ADVISORY_CHECK_RUNS} entries; dropping the rest.`);
+      break;
+    }
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+      warnings.push(`Manifest gate field "${field}[${index}]" must be a mapping with "name" and "appSlug" strings; ignoring it.`);
+      continue;
+    }
+    const e = entry as Record<string, JsonValue>;
+    const name = typeof e.name === "string" ? e.name.trim() : "";
+    const appSlug = typeof e.appSlug === "string" ? e.appSlug.trim() : "";
+    if (!name || !appSlug) {
+      warnings.push(`Manifest gate field "${field}[${index}]" needs a non-empty "name" AND "appSlug" (name-only matching is spoofable); ignoring the entry.`);
+      continue;
+    }
+    out.push({ name, appSlug });
+  }
+  return out.length > 0 ? out : null;
+}
+
 /**
  * Parse the optional `gate:` mapping. Every field stays `null` when unset so the resolver can layer
  * this OVER DB settings without clobbering. A nested `readiness: { mode, minScore }` block is accepted.
@@ -1363,6 +1413,7 @@ function parseGateConfig(value: JsonValue | undefined, warnings: string[]): Focu
     claCheckRunName: parsePublicSafeText(claRecord?.checkRunName, "gate.cla.checkRunName", warnings),
     claCheckRunAppSlug: parsePublicSafeText(claRecord?.checkRunAppSlug, "gate.cla.checkRunAppSlug", warnings),
     expectedCiContexts: normalizeOptionalStringList(record.expectedCiContexts, "gate.expectedCiContexts", warnings),
+    advisoryCheckRuns: normalizeOptionalAdvisoryCheckRuns(record.advisoryCheckRuns, "gate.advisoryCheckRuns", warnings),
     aiJudgmentBlockersMode: normalizeOptionalEnum(record.aiJudgmentBlockers, "gate.aiJudgmentBlockers", ["gate", "advisory"] as const, warnings),
     copycatMode: normalizeOptionalEnum(copycatRecord?.mode, "gate.copycat.mode", ["off", "warn", "label", "block"] as const, warnings),
     copycatMinScore: normalizeOptionalScore(copycatRecord?.minScore, "gate.copycat.minScore", warnings),
@@ -1423,6 +1474,7 @@ function parseGateConfig(value: JsonValue | undefined, warnings: string[]): Focu
     gate.claCheckRunName !== null ||
     gate.claCheckRunAppSlug !== null ||
     gate.expectedCiContexts !== null ||
+    gate.advisoryCheckRuns !== null ||
     gate.aiJudgmentBlockersMode !== null ||
     gate.copycatMode !== null ||
     gate.copycatMinScore !== null;
@@ -1502,6 +1554,9 @@ export function gateConfigToJson(gate: FocusManifestGateConfig): JsonValue {
     out.cla = cla;
   }
   if (gate.expectedCiContexts !== null) out.expectedCiContexts = gate.expectedCiContexts as JsonValue;
+  if (gate.advisoryCheckRuns !== null) {
+    out.advisoryCheckRuns = gate.advisoryCheckRuns.map((c) => ({ name: c.name, appSlug: c.appSlug })) as JsonValue;
+  }
   if (gate.aiJudgmentBlockersMode !== null) out.aiJudgmentBlockers = gate.aiJudgmentBlockersMode;
   if (gate.copycatMode !== null || gate.copycatMinScore !== null) {
     const copycat: Record<string, JsonValue> = {};

@@ -281,6 +281,7 @@ describe(".loopover.yml.example field-exhaustiveness (#1670)", () => {
     claCheckRunName: "checkRunName:",
     claCheckRunAppSlug: "checkRunAppSlug:",
     expectedCiContexts: "expectedCiContexts:",
+    advisoryCheckRuns: "advisoryCheckRuns:",
     aiJudgmentBlockersMode: "aiJudgmentBlockers:",
     copycatMode: "copycat:",
     copycatMinScore: "copycat:",
@@ -846,7 +847,7 @@ describe("compileFocusManifestPolicy", () => {
       issueDiscoveryPolicy: "neutral",
       maintainerNotes: [],
       publicNotes: ["Keep PRs focused.", "Maximize your reward payout"],
-      gate: { present: false, enabled: null, checkMode: null, pack: null, linkedIssue: null, duplicates: null, readinessMode: null, readinessMinScore: null, slopMode: null, slopMinScore: null, slopAiAdvisory: null, sizeMode: null, lockfileIntegrityMode: null, aiReviewMode: null, aiReviewByok: null, aiReviewProvider: null, aiReviewModel: null, aiReviewAllAuthors: null, aiReviewCloseConfidence: null, aiReviewLowConfidenceDisposition: null, aiReviewCombine: null, aiReviewOnMerge: null, aiReviewReviewers: null, mergeReadiness: null, selfAuthoredLinkedIssue: null, linkedIssueSatisfaction: null, manifestPolicy: null, dryRun: null, firstTimeContributorGrace: null, premergeContentRecheck: null, requireFreshRebaseWindowMinutes: null, claMode: null, claConsentPhrase: null, claCheckRunName: null, claCheckRunAppSlug: null, expectedCiContexts: null, aiJudgmentBlockersMode: null, copycatMode: null, copycatMinScore: null },
+      gate: { present: false, enabled: null, checkMode: null, pack: null, linkedIssue: null, duplicates: null, readinessMode: null, readinessMinScore: null, slopMode: null, slopMinScore: null, slopAiAdvisory: null, sizeMode: null, lockfileIntegrityMode: null, aiReviewMode: null, aiReviewByok: null, aiReviewProvider: null, aiReviewModel: null, aiReviewAllAuthors: null, aiReviewCloseConfidence: null, aiReviewLowConfidenceDisposition: null, aiReviewCombine: null, aiReviewOnMerge: null, aiReviewReviewers: null, mergeReadiness: null, selfAuthoredLinkedIssue: null, linkedIssueSatisfaction: null, manifestPolicy: null, dryRun: null, firstTimeContributorGrace: null, premergeContentRecheck: null, requireFreshRebaseWindowMinutes: null, claMode: null, claConsentPhrase: null, claCheckRunName: null, claCheckRunAppSlug: null, expectedCiContexts: null, advisoryCheckRuns: null, aiJudgmentBlockersMode: null, copycatMode: null, copycatMinScore: null },
       settings: {},
       review: { present: false, footerText: null, note: null, fields: {}, enrichmentAnalyzers: {}, profile: null, tone: null, securityFocus: null, inlineComments: null, fixHandoff: null, autoMergeSummary: null, suggestions: null, changedFilesSummary: null, effortScore: null, impactMap: null, cultureProfile: null, selftune: null, reviewMemory: null, findingCategories: null, inlineCommentsPerCategory: null, minFindingSeverity: null, maxFindings: { blockers: null, nits: null }, commentVerbosity: null, e2eTestDelivery: null, e2eTestAutoTrigger: null, pathInstructions: [], instructions: null, excludePaths: [], pathFilters: [], preMergeChecks: [], autoReview: { ...EMPTY_AUTO_REVIEW_CONFIG }, aiModel: { ...EMPTY_SELF_HOST_AI_MODEL_CONFIG }, visual: { ...EMPTY_VISUAL_CONFIG }, linkedIssueSatisfaction: null, sharedConfigSource: null },
       features: { present: false, rag: null, reputation: null, unifiedComment: null, safety: null, grounding: null, e2eTests: null, screenshots: null, improvementSignal: null },
@@ -1158,7 +1159,7 @@ describe("parseFocusManifest gate config", () => {
     // the block→advisory deprecation-downgrade behavior itself is covered separately below.
     const m = parseFocusManifest({ gate: { linkedIssue: "block", duplicates: "advisory", readiness: { mode: "advisory", minScore: 70 } } });
     expect(m.present).toBe(true);
-    expect(m.gate).toEqual({ present: true, enabled: null, checkMode: null, pack: null, linkedIssue: "block", duplicates: "advisory", readinessMode: "advisory", readinessMinScore: 70, slopMode: null, slopMinScore: null, slopAiAdvisory: null, sizeMode: null, lockfileIntegrityMode: null, aiReviewMode: null, aiReviewByok: null, aiReviewProvider: null, aiReviewModel: null, aiReviewAllAuthors: null, aiReviewCloseConfidence: null, aiReviewLowConfidenceDisposition: null, aiReviewCombine: null, aiReviewOnMerge: null, aiReviewReviewers: null, mergeReadiness: null, selfAuthoredLinkedIssue: null, linkedIssueSatisfaction: null, manifestPolicy: null, dryRun: null, firstTimeContributorGrace: null, premergeContentRecheck: null, requireFreshRebaseWindowMinutes: null, claMode: null, claConsentPhrase: null, claCheckRunName: null, claCheckRunAppSlug: null, expectedCiContexts: null, aiJudgmentBlockersMode: null, copycatMode: null, copycatMinScore: null });
+    expect(m.gate).toEqual({ present: true, enabled: null, checkMode: null, pack: null, linkedIssue: "block", duplicates: "advisory", readinessMode: "advisory", readinessMinScore: 70, slopMode: null, slopMinScore: null, slopAiAdvisory: null, sizeMode: null, lockfileIntegrityMode: null, aiReviewMode: null, aiReviewByok: null, aiReviewProvider: null, aiReviewModel: null, aiReviewAllAuthors: null, aiReviewCloseConfidence: null, aiReviewLowConfidenceDisposition: null, aiReviewCombine: null, aiReviewOnMerge: null, aiReviewReviewers: null, mergeReadiness: null, selfAuthoredLinkedIssue: null, linkedIssueSatisfaction: null, manifestPolicy: null, dryRun: null, firstTimeContributorGrace: null, premergeContentRecheck: null, requireFreshRebaseWindowMinutes: null, claMode: null, claConsentPhrase: null, claCheckRunName: null, claCheckRunAppSlug: null, expectedCiContexts: null, advisoryCheckRuns: null, aiJudgmentBlockersMode: null, copycatMode: null, copycatMinScore: null });
   });
 
   it("parses gate.mergeReadiness + gate.firstTimeContributorGrace, round-trips them, and warns on bad values (#822)", () => {
@@ -1599,6 +1600,37 @@ describe("parseFocusManifest gate config", () => {
     });
     expect(over.gate.aiReviewReviewers).toEqual([{ model: "a" }, { model: "b" }, { model: "c" }, { model: "d" }]);
     expect(over.warnings.some((w) => /gate\.aiReview\.reviewers" is capped/.test(w))).toBe(true);
+  });
+
+  it("parses gate.advisoryCheckRuns, makes the gate present, round-trips + resolves it, caps entries, and drops entries missing name/appSlug (#4372)", () => {
+    const m = parseFocusManifest({ gate: { advisoryCheckRuns: [{ name: "Third-Party Scan", appSlug: "example-scanner" }, { name: "Trust Check", appSlug: "example-trust" }] } });
+    expect(m.gate.present).toBe(true);
+    expect(m.gate.advisoryCheckRuns).toEqual([{ name: "Third-Party Scan", appSlug: "example-scanner" }, { name: "Trust Check", appSlug: "example-trust" }]);
+    expect(parseFocusManifest({ gate: gateConfigToJson(m.gate) }).gate).toEqual(m.gate); // round-trips
+    const eff = resolveEffectiveSettings({ advisoryCheckRuns: undefined } as unknown as RepositorySettings, m);
+    expect(eff.advisoryCheckRuns).toEqual([{ name: "Third-Party Scan", appSlug: "example-scanner" }, { name: "Trust Check", appSlug: "example-trust" }]);
+    // Absent ⇒ null ⇒ the DB/default value is left untouched.
+    const noFlag = parseFocusManifest({ gate: { claMode: "advisory" } });
+    expect(noFlag.gate.advisoryCheckRuns).toBeNull();
+    expect(resolveEffectiveSettings({ advisoryCheckRuns: [{ name: "Existing", appSlug: "existing-app" }] } as unknown as RepositorySettings, noFlag).advisoryCheckRuns).toEqual([{ name: "Existing", appSlug: "existing-app" }]);
+    // Non-array ⇒ warns, stays null.
+    expect(parseFocusManifest({ gate: { advisoryCheckRuns: "Third-Party Scan" } }).warnings.some((w) => /gate\.advisoryCheckRuns/.test(w))).toBe(true);
+    expect(parseFocusManifest({ gate: { advisoryCheckRuns: "Third-Party Scan" } }).gate.advisoryCheckRuns).toBeNull();
+    // A non-mapping entry, a name-only entry (spoofable → dropped), and an appSlug-only entry are dropped; valid siblings survive.
+    const mixed = parseFocusManifest({ gate: { advisoryCheckRuns: [{ name: "Good", appSlug: "good-app" }, "nope", { name: "NoSlug" }, { appSlug: "no-name" }, { name: "  ", appSlug: "blank" }] } });
+    expect(mixed.gate.advisoryCheckRuns).toEqual([{ name: "Good", appSlug: "good-app" }]);
+    expect(mixed.warnings.some((w) => /gate\.advisoryCheckRuns\[1\]/.test(w))).toBe(true);
+    expect(mixed.warnings.some((w) => /gate\.advisoryCheckRuns\[2\]/.test(w))).toBe(true);
+    expect(mixed.warnings.some((w) => /gate\.advisoryCheckRuns\[3\]/.test(w))).toBe(true);
+    expect(mixed.warnings.some((w) => /gate\.advisoryCheckRuns\[4\]/.test(w))).toBe(true);
+    // All-invalid list ⇒ null (not an empty array), matching every other manifest "absent means null" contract.
+    expect(parseFocusManifest({ gate: { advisoryCheckRuns: [{ name: "x" }] } }).gate.advisoryCheckRuns).toBeNull();
+    // Over the cap (16): only the first 16 entries survive, with a warning.
+    const over = parseFocusManifest({
+      gate: { advisoryCheckRuns: Array.from({ length: 18 }, (_, i) => ({ name: `Check ${i}`, appSlug: `app-${i}` })) },
+    });
+    expect(over.gate.advisoryCheckRuns).toHaveLength(16);
+    expect(over.warnings.some((w) => /gate\.advisoryCheckRuns" is capped/.test(w))).toBe(true);
   });
 
   it("parses the features: block (per-repo converged-feature toggles), round-trips it, and makes the manifest present", () => {

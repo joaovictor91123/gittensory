@@ -2710,6 +2710,7 @@ describe("queue processors", () => {
         hasMissingRequiredContext: false,
         failingDetails: [],
         nonRequiredFailingDetails: [],
+        advisoryHoldDetails: [],
         ciCompletenessWarning: null,
       });
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -2897,6 +2898,7 @@ describe("queue processors", () => {
         hasMissingRequiredContext: false,
         failingDetails: [],
         nonRequiredFailingDetails: [],
+        advisoryHoldDetails: [],
         ciCompletenessWarning: null,
       });
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -3079,6 +3081,7 @@ describe("queue processors", () => {
         hasMissingRequiredContext: false,
         failingDetails: [],
         nonRequiredFailingDetails: [],
+        advisoryHoldDetails: [],
         ciCompletenessWarning: null,
       });
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -3239,6 +3242,7 @@ describe("queue processors", () => {
       hasMissingRequiredContext: false,
       failingDetails: [],
       nonRequiredFailingDetails: [],
+      advisoryHoldDetails: [],
       ciCompletenessWarning: null,
     });
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -3359,6 +3363,7 @@ describe("queue processors", () => {
       hasMissingRequiredContext: false,
       failingDetails: [],
       nonRequiredFailingDetails: [],
+      advisoryHoldDetails: [],
       ciCompletenessWarning: null,
     });
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -3506,6 +3511,7 @@ describe("queue processors", () => {
       hasMissingRequiredContext: false,
       failingDetails: [],
       nonRequiredFailingDetails: [],
+      advisoryHoldDetails: [],
       ciCompletenessWarning: null,
     });
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -3653,6 +3659,7 @@ describe("queue processors", () => {
         hasMissingRequiredContext: false,
         failingDetails: [],
         nonRequiredFailingDetails: [],
+        advisoryHoldDetails: [],
         ciCompletenessWarning: null,
       });
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -3825,6 +3832,7 @@ describe("queue processors", () => {
         hasMissingRequiredContext: false,
         failingDetails: [],
         nonRequiredFailingDetails: [],
+        advisoryHoldDetails: [],
         ciCompletenessWarning: null,
       });
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -4006,6 +4014,7 @@ describe("queue processors", () => {
         hasMissingRequiredContext: false,
         failingDetails: [],
         nonRequiredFailingDetails: [],
+        advisoryHoldDetails: [],
         ciCompletenessWarning: null,
       });
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -4350,6 +4359,7 @@ describe("queue processors", () => {
         hasMissingRequiredContext: false,
         failingDetails: [],
         nonRequiredFailingDetails: [],
+        advisoryHoldDetails: [],
         ciCompletenessWarning: null,
       });
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -4514,6 +4524,7 @@ describe("queue processors", () => {
         hasMissingRequiredContext: false,
         failingDetails: [],
         nonRequiredFailingDetails: [],
+        advisoryHoldDetails: [],
         ciCompletenessWarning: null,
       });
     vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {

@@ -234,7 +234,7 @@ export async function decidePendingAgentAction(env: Env, input: { id: string; de
       shouldRecheckLiveDisposition
         ? fetchRequiredStatusContexts(env, pending.repoFullName, pr!.baseRef, token, admissionKey)
             .then((branchProtectionContexts) => mergeRequiredCiContexts(branchProtectionContexts, settings.expectedCiContexts))
-            .then((requiredContexts) => fetchLiveCiAggregate(env, pending.repoFullName, pr!.headSha, token, requiredContexts, admissionKey))
+            .then((requiredContexts) => fetchLiveCiAggregate(env, pending.repoFullName, pr!.headSha, token, requiredContexts, admissionKey, settings.advisoryCheckRuns))
         : Promise.resolve(undefined),
       shouldRecheckLiveDisposition ? fetchLivePullRequestMergeState(env, pending.repoFullName, pending.pullNumber, token, admissionKey) : Promise.resolve(undefined),
       shouldRecheckLiveDisposition ? fetchLivePullRequestReviewDecision(env, pending.repoFullName, pending.pullNumber, token, admissionKey) : Promise.resolve(undefined),
@@ -419,6 +419,7 @@ export async function decidePendingAgentAction(env: Env, input: { id: string; de
       // executeAgentMaintenanceActions) needs the same effective required contexts this accept-time re-check
       // (above) evaluated against. Re-fetch so branch-protection changes remain authoritative at accept time.
       requiredCiContexts: executionRequiredContexts,
+      advisoryCheckRuns: settings.advisoryCheckRuns, // #4372: same exclusion the plan used, for step-8 re-verify
       // #3472 split-brain: a staged approve/merge can sit queued long enough for a SIBLING pass to publish a
       // manual-review hold on this same PR/head before the maintainer accepts — the executor's own live guard
       // (step 7b of executeAgentMaintenanceActions) needs the configured label to check for.

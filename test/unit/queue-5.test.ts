@@ -5580,6 +5580,7 @@ describe("queue processors", () => {
         hasMissingRequiredContext: false,
         failingDetails: [],
         nonRequiredFailingDetails: [],
+        advisoryHoldDetails: [],
         ciCompletenessWarning: null,
       });
       const posted = { count: 0, body: "" };

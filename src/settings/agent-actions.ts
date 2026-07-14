@@ -356,6 +356,13 @@ export type AgentActionPlanInput = {
   // emitted migration-collision label so the contributor knows why. Never causes a CLOSE — only
   // ever downgrades a would-merge into a held-for-review state, same risk profile as the guardrail hold.
   migrationCollisionHold?: { reason: string; comment: string } | undefined;
+  // Advisory check-run hold (#4372). A maintainer-declared `gate.advisoryCheckRuns` entry resolved COMPLETED to a
+  // non-passing conclusion. The check was excluded from CI pass/fail entirely (it never blocks or freezes the
+  // gate), but it must not be silently swallowed either: same risk profile as migrationCollisionHold — SUPPRESSES
+  // the merge (folded into `heldForManualReview`), never causes a CLOSE, only downgrades a would-merge into a
+  // held-for-review state so a maintainer can act on the signal their installed app raised. Each entry names the
+  // triggering check/app/conclusion so the hold reason (and the manual-review label's comment) is actionable.
+  advisoryCheckHold?: ReadonlyArray<{ name: string; appSlug: string; conclusion: string }> | undefined;
   // Unlinked-issue guardrail (#unlinked-issue-guardrail, credibility-gate-farming defense). The trigger
   // (runAgentMaintenancePlanAndExecute) has already run the deterministic pre-filter + AI verification for a
   // PR that links NO issue -- this input is already the resolved "yes, hold this merge" verdict (or absent,
@@ -586,6 +593,18 @@ function screenshotTableCloseMessage(reason: string): string {
   return `${reason} This is an automated maintenance action.`;
 }
 
+// #4372: name the advisory check-run(s) that forced a manual-review hold, for the label reason (audit) and the
+// public comment. No vendor name is hardcoded — the values come from the maintainer's own `gate.advisoryCheckRuns`.
+function advisoryHoldReason(holds: ReadonlyArray<{ name: string; appSlug: string; conclusion: string }>): string {
+  const parts = holds.map((h) => `"${h.name}" (${h.appSlug}) concluded ${h.conclusion}`);
+  return `advisory check-run held for manual review: ${parts.join("; ")}`;
+}
+
+function advisoryHoldComment(holds: ReadonlyArray<{ name: string; appSlug: string; conclusion: string }>): string {
+  const parts = holds.map((h) => `\`${h.name}\` (from \`${h.appSlug}\`) concluded \`${h.conclusion}\``);
+  return `Held for manual review: a maintainer-configured advisory check-run reported a non-passing result — ${parts.join("; ")}. This does not block CI, but a maintainer should review it. This is an automated maintenance action.`;
+}
+
 /**
  * Plan best-effort assignment of the PR's opening contributor (#3182), independent of merge/close/CI outcome.
  * MUST run before the CI-pending settle-before-decide return below (#assign-before-ci-pending) — a PR that has
@@ -813,6 +832,7 @@ export function planAgentMaintenanceActions(input: AgentActionPlanInput): Planne
     guardrailHit ||
     input.migrationCollisionHold !== undefined ||
     input.unlinkedIssueMatchHold !== undefined ||
+    (input.advisoryCheckHold !== undefined && input.advisoryCheckHold.length > 0) ||
     (input.unlinkedIssueMatchClose !== undefined && !acting("close"));
   const labels = resolveAgentDispositionLabels(input);
   // Canonical (reviewbot non-content-gate) policy, tuned to the operator's minimize-manual goal: merge-or-close
@@ -1002,9 +1022,11 @@ export function planAgentMaintenanceActions(input: AgentActionPlanInput): Planne
               ? `verdict=${conclusion}; ${input.unlinkedIssueMatchHold.reason}`
               : input.unlinkedIssueMatchClose !== undefined
                 ? `verdict=${conclusion}; ${input.unlinkedIssueMatchClose.reason}`
-                : heldForManualReview
-                  ? `verdict=${conclusion}; ${guardrailReason}`
-                  : `verdict=${conclusion}; CI green`;
+                : input.advisoryCheckHold !== undefined && input.advisoryCheckHold.length > 0
+                  ? `verdict=${conclusion}; ${advisoryHoldReason(input.advisoryCheckHold)}`
+                  : heldForManualReview
+                    ? `verdict=${conclusion}; ${guardrailReason}`
+                    : `verdict=${conclusion}; CI green`;
     if (label !== null && !hasLabelOrPlanned(input.pr.labels, actions, label)) {
       actions.push({
         actionClass: "label",
@@ -1023,7 +1045,9 @@ export function planAgentMaintenanceActions(input: AgentActionPlanInput): Planne
             ? { comment: sanitizePublicComment(input.unlinkedIssueMatchHold.comment) }
             : !linkedIssueCloseInFlight && !unlinkedIssueMatchViolated && reviewGood && input.unlinkedIssueMatchClose !== undefined
               ? { comment: sanitizePublicComment(input.unlinkedIssueMatchClose.comment) }
-              : {}),
+              : !linkedIssueCloseInFlight && !unlinkedIssueMatchViolated && reviewGood && input.advisoryCheckHold !== undefined && input.advisoryCheckHold.length > 0
+                ? { comment: sanitizePublicComment(advisoryHoldComment(input.advisoryCheckHold)) }
+                : {}),
       });
     }
     // Stale disposition-label cleanup (#stale-disposition-label-cleanup): the review-state labels below
