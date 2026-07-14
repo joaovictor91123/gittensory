@@ -48,6 +48,7 @@ import {
   getRepoQueueTrendSnapshot,
   listAgentAuditEvents,
   listCheckSummaries,
+  listPrVisibilitySkipAuditEvents,
   listPendingAgentActions,
   listContributorRepoStats,
   listContributorIssues,
@@ -70,6 +71,7 @@ import {
   recordProductUsageEvent,
 } from "../db/repositories";
 import { decidePendingAgentAction } from "../services/agent-approval-queue";
+import { nowIso } from "../utils/json";
 import { buildNotificationFeed } from "../notifications/service";
 import { contributorRepoStatsFromGittensor, fetchGittensorContributorSnapshot } from "../gittensor/api";
 import { getRepositoryCollaboratorPermission } from "../github/app";
@@ -130,6 +132,7 @@ import {
   buildRegistryChangeReport,
   buildRoleContext,
 } from "../signals/engine";
+import { PUBLIC_SURFACE_SKIP_REASONS, skippedPrAuditRemediation, type PublicSurfaceSkipReason } from "../signals/settings-preview";
 import { buildContributorOpenPrMonitor } from "../signals/contributor-open-pr-monitor";
 import { buildLocalBranchAnalysis, findCurrentBranchPullRequest } from "../signals/local-branch";
 import { computeLocalScorerTokens } from "../signals/local-scorer";
@@ -813,6 +816,25 @@ const gatePrecisionOutputSchema = {
   perGateType: z.array(z.unknown()).optional(),
   overall: z.unknown().optional(),
   signals: z.array(z.string()).optional(),
+};
+
+// #5825 - maintainer-authenticated skipped-PR audit trail, mirroring GET /v1/app/skipped-pr-audit's
+// filters (all optional: a bare call returns the caller's own repo-scoped feed). No owner/repo shape
+// here on purpose: unlike ownerRepoShape tools this report can legitimately span every repo the caller
+// is scoped to, so repoFullName narrows rather than requires.
+const skippedPrAuditShape = {
+  repoFullName: z.string().trim().min(1).max(200).optional(),
+  reason: z.enum(PUBLIC_SURFACE_SKIP_REASONS).optional(),
+  since: z.string().trim().min(1).max(64).optional(),
+  limit: z.number().int().positive().optional(),
+};
+
+const skippedPrAuditOutputSchema = {
+  generatedAt: z.string().optional(),
+  limit: z.number().optional(),
+  hasMore: z.boolean().optional(),
+  filters: z.unknown().optional(),
+  items: z.array(z.unknown()).optional(),
 };
 
 const contributorProfileOutputSchema = {
@@ -1677,6 +1699,17 @@ export class LoopoverMcp {
         outputSchema: gatePrecisionOutputSchema,
       },
       async (input) => this.toolResult(await this.getGatePrecision(input)),
+    );
+
+    server.registerTool(
+      "loopover_get_skipped_pr_audit",
+      {
+        description:
+          "Return the skipped-PR audit trail: pull requests LoopOver's automated reviewer intentionally stayed quiet on, each with a reason code and a remediation hint. Optionally filter by repoFullName, reason, or since. Maintainer-authenticated; read-only measurement, not a moderation or override action.",
+        inputSchema: skippedPrAuditShape,
+        outputSchema: skippedPrAuditOutputSchema,
+      },
+      async (input) => this.toolResult(await this.getSkippedPrAudit(input)),
     );
 
     server.registerTool(
@@ -2972,6 +3005,69 @@ export class LoopoverMcp {
     return {
       summary: `LoopOver gate precision for ${fullName}: ${report.overall.blocked} gate blocks, overall false-positive rate ${report.overall.falsePositiveRate ?? "n/a (below sample threshold)"}.`,
       data: report as unknown as Record<string, unknown>,
+    };
+  }
+
+  // #5825 - repo-scope resolution for the skipped-PR audit tool. Mirrors skippedPrAuditRepoScope in
+  // src/api/routes.ts (same underlying loadControlPanelRoleSummary/loadControlPanelAccessScope calls,
+  // same maintainer/owner/operator role gate, same "no filter -> caller's own scoped repos" fallback),
+  // adapted to this file's MCP identity/throw conventions since that route helper is bound to a Hono
+  // ProtectedRouteContext and returns a Response, neither of which fits an MCP tool method. The shared
+  // static `mcp` CLI token is NOT trusted implicitly for this cross-repo maintainer report (unlike the
+  // route's own static identities, which are operator-only Worker secrets) -- it must opt in via the
+  // unscoped MCP_READ_REPO_ALLOWLIST wildcard, matching requireOperatorAccess/requireDiscoveryAccess above.
+  private async requireSkippedPrAuditAccess(requestedRepo: string | undefined): Promise<string[] | undefined> {
+    if (this.identity.kind === "session") {
+      const [summary, scope] = await Promise.all([loadControlPanelRoleSummary(this.env, this.identity.actor), this.loadSessionAccessScope()]);
+      if (!summary.roles.some((role) => role === "maintainer" || role === "owner" || role === "operator")) {
+        throw new Error("Forbidden: maintainer, owner, or operator role is required for the skipped-PR audit.");
+      }
+      if (scope.operator) return requestedRepo ? [requestedRepo] : undefined;
+      if (!requestedRepo) return scope.repositoryFullNames;
+      if (!scope.repositoryFullNames.some((name) => name.toLowerCase() === requestedRepo.toLowerCase())) {
+        throw new Error("Forbidden: session cannot access this repository's skipped-PR audit.");
+      }
+      return [requestedRepo];
+    }
+    if (this.identity.kind === "static" && this.identity.actor === "mcp" && !isMcpReadUnscoped(this.env.MCP_READ_REPO_ALLOWLIST)) {
+      throw new Error("Forbidden: this MCP token is not authorized for the skipped-PR audit.");
+    }
+    return requestedRepo ? [requestedRepo] : undefined;
+  }
+
+  private async getSkippedPrAudit(input: {
+    repoFullName?: string | undefined;
+    reason?: PublicSurfaceSkipReason | undefined;
+    since?: string | undefined;
+    limit?: number | undefined;
+  }): Promise<ToolPayload> {
+    const repoFullNames = await this.requireSkippedPrAuditAccess(input.repoFullName);
+    let sinceIso: string | undefined;
+    if (input.since !== undefined) {
+      const timestamp = Date.parse(input.since);
+      if (!Number.isFinite(timestamp)) throw new Error(`Invalid since: "${input.since}" is not a parseable date.`);
+      sinceIso = new Date(timestamp).toISOString();
+    }
+    const page = await listPrVisibilitySkipAuditEvents(this.env, { limit: input.limit, repoFullNames, reason: input.reason, sinceIso });
+    return {
+      summary: `LoopOver skipped-PR audit: ${page.items.length} event(s) (limit ${page.limit}${page.hasMore ? ", more available" : ""}).`,
+      data: {
+        generatedAt: nowIso(),
+        limit: page.limit,
+        hasMore: page.hasMore,
+        filters: {
+          repoFullName: input.repoFullName ?? null,
+          reason: input.reason ?? null,
+          since: sinceIso ?? null,
+        },
+        items: page.items.map((item) => ({
+          repoFullName: item.repoFullName,
+          pullNumber: item.pullNumber,
+          reason: item.reason,
+          timestamp: item.createdAt,
+          remediation: skippedPrAuditRemediation(item.reason),
+        })),
+      },
     };
   }
 

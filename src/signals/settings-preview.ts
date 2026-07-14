@@ -48,6 +48,19 @@ export type PublicSurfaceSkipReason =
   | "miner_detection_unavailable"
   | "not_official_gittensor_miner";
 
+// Canonical reason list, shared by the /v1/app/skipped-pr-audit route's query-param enum and the
+// loopover_get_skipped_pr_audit MCP tool's input enum, so both surfaces stay in lockstep with
+// PublicSurfaceSkipReason instead of maintaining their own copy of this literal list.
+export const PUBLIC_SURFACE_SKIP_REASONS = [
+  "surface_off",
+  "missing_author",
+  "bot_author",
+  "ignored_author",
+  "maintainer_author",
+  "miner_detection_unavailable",
+  "not_official_gittensor_miner",
+] as const satisfies readonly PublicSurfaceSkipReason[];
+
 export type PublicSurfaceAction = "skip" | "comment" | "label" | "check_run" | "none";
 
 export type PublicSurfaceDecisionInput = {
@@ -81,6 +94,31 @@ const SKIP_SUMMARY: Record<PublicSurfaceSkipReason, string> = {
 
 function skipDecision(reason: PublicSurfaceSkipReason): PublicSurfaceDecision {
   return { willComment: false, willLabel: false, willCheckRun: false, skipped: true, skipReason: reason, actions: ["skip"], summary: SKIP_SUMMARY[reason] };
+}
+
+// Maintainer-facing remediation hint for a skipped-PR audit event's reason code. Shared by the
+// /v1/app/skipped-pr-audit route and the loopover_get_skipped_pr_audit MCP tool. Takes a plain string
+// (not PublicSurfaceSkipReason) because audit rows can carry historic/legacy reason values recorded
+// before the current reason set existed; those fall through to the generic default.
+export function skippedPrAuditRemediation(reason: string): string {
+  switch (reason) {
+    case "surface_off":
+      return "Enable a PR public surface or check runs in repository settings if maintainers want LoopOver to post.";
+    case "missing_author":
+      return "Retry after GitHub provides a resolvable pull request author.";
+    case "bot_author":
+      return "No action needed; bot-authored pull requests are intentionally kept quiet.";
+    case "ignored_author":
+      return "No action needed; the repository manifest explicitly skips review output for this author.";
+    case "maintainer_author":
+      return "Enable maintainer-authored PRs in repository settings only if those PRs should receive public GitHub App output.";
+    case "miner_detection_unavailable":
+      return "Retry after official Gittensor miner detection recovers; LoopOver skips instead of guessing.";
+    case "not_official_gittensor_miner":
+      return "No public action is needed unless the author should be recognized as an official Gittensor miner.";
+    default:
+      return "Review repository settings and installation health before reprocessing the pull request.";
+  }
 }
 
 /**
