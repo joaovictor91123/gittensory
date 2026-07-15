@@ -1323,3 +1323,59 @@ describe("isUnifiedReviewCommentEnabled (flag-OFF selects the legacy path)", () 
     }
   });
 });
+
+describe("comment size-budget guard (#6069)", () => {
+  it("leaves a normal-sized comment completely untouched (no trimming, no note)", () => {
+    const body = buildUnifiedCommentBody({
+      gate: gate(),
+      aiReview: { notes: "Clean change." },
+      panelRows,
+      readinessTotal: 88,
+      changedFiles: 3,
+      footerMarkdown: footer,
+      extraCollapsibles: [{ title: "Signal definitions", body: "Readiness signals describe public-metadata readiness." }],
+    });
+    expect(body).toContain("<details><summary><b>Signal definitions</b></summary>");
+    expect(body).not.toContain("Some detail omitted");
+    expect(body.length).toBeLessThan(60_000);
+  });
+
+  it("trims the lowest-priority (last) optional collapsibles until the body fits the budget, and notes the omission", () => {
+    // Five ~15KB collapsibles (75KB total) comfortably exceed the 60,000-char budget on their own --
+    // every OTHER optional section (auto-merge summary, changed files, impact map, fix handoff, visual
+    // preview, scroll preview) is left unset, so these five sit at the effective END of the chain and are
+    // exactly what the trim-from-the-end loop should remove first.
+    const huge = (label: string) => ({ title: label, body: "x".repeat(15_000) });
+    const body = buildUnifiedCommentBody({
+      gate: gate({ conclusion: "failure" }),
+      panelRows,
+      readinessTotal: 40,
+      changedFiles: 2,
+      footerMarkdown: footer,
+      extraCollapsibles: [huge("Section A"), huge("Section B"), huge("Section C"), huge("Section D"), huge("Section E")],
+    });
+    expect(body.length).toBeLessThanOrEqual(60_000 + 500); // budget + the small trailing omission note
+    expect(body).toContain("Some detail omitted");
+    // Disposition-relevant content survives trimming intact -- it's never part of extraCollapsibles.
+    expect(body).toContain("**Decision drivers**");
+    expect(body).toContain("Suggested Action");
+    // At least one of the huge sections was actually dropped (otherwise the note wouldn't be honest).
+    const survivingSections = ["Section A", "Section B", "Section C", "Section D", "Section E"].filter((label) => body.includes(label));
+    expect(survivingSections.length).toBeLessThan(5);
+  });
+
+  it("still returns a body (never throws/empties) even when trimming every optional section isn't enough", () => {
+    // A single collapsible bigger than the whole budget by itself -- trimming it away still leaves
+    // core content, which is the correct, only-safe behavior (core content is never droppable).
+    const body = buildUnifiedCommentBody({
+      gate: gate(),
+      panelRows,
+      readinessTotal: 90,
+      changedFiles: 1,
+      footerMarkdown: footer,
+      extraCollapsibles: [{ title: "Massive", body: "x".repeat(200_000) }],
+    });
+    expect(body).toContain("LoopOver review result");
+    expect(body).toContain("**Decision drivers**");
+  });
+});

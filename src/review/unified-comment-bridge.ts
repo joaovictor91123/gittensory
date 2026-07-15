@@ -43,6 +43,8 @@ import {
   type ReviewNotes,
   type ReviewRecommendation,
   type UnifiedCollapsible,
+  type UnifiedCommentContext,
+  type UnifiedReviewInput,
   type UnifiedSignalRow,
   type Verdict,
 } from "./unified-comment";
@@ -720,6 +722,47 @@ export function buildFindingCategoryCollapsible(findings: FindingCategoryInput[]
   return { title: "Finding categories", body };
 }
 
+// #6069: a safe upper bound for the RENDERED comment body (before the marker prefix in buildUnifiedCommentBody
+// below), comfortably under GitHub's real ~65536-character issue/PR comment cap (see MAX_STORED_BODY_CHARS,
+// src/db/repositories.ts, for the same real limit applied to INCOMING bodies) -- leaves headroom for that
+// marker plus a margin against undercounting. A maximally-featured PR (every optional collapsible active,
+// plus e.g. a large changed-files table) had no aggregate size guard before this -- each section only ever
+// capped ITSELF, so a comment could silently exceed GitHub's limit and fail to post at all.
+const COMMENT_BODY_BUDGET_CHARS = 60_000;
+
+/**
+ * Render the comment, dropping the LOWEST-priority optional collapsibles -- from the end of
+ * `extraCollapsibles` -- one at a time until the body fits COMMENT_BODY_BUDGET_CHARS or none are left to
+ * drop. The construction order in `buildUnifiedCommentBody` already puts the heaviest/most decorative
+ * sections last (Visual preview / Scroll preview's embedded image tables, Changed files' up-to-200-row
+ * table), ahead of nothing but each other, so trimming from the end removes bulk before reference material.
+ * Disposition-relevant content -- headline, chips, verdict, blockers, per-blocker AI fix context, decision
+ * drivers -- is rendered directly by `renderUnifiedReviewComment` and is never part of `extraCollapsibles`,
+ * so this loop can never drop it. When trimming happens, a final note is appended so the omission is visible
+ * IN the comment (a maintainer reading it sees why detail is missing), not just an ops log they'd never see.
+ */
+function renderWithinBudget(
+  input: UnifiedReviewInput,
+  ctxBase: Omit<UnifiedCommentContext, "extraCollapsibles">,
+  extraCollapsibles: UnifiedCollapsible[] | undefined,
+): string {
+  const all = extraCollapsibles ?? [];
+  let kept = all;
+  for (;;) {
+    const body = renderUnifiedReviewComment(input, { ...ctxBase, ...(kept.length > 0 ? { extraCollapsibles: kept } : {}) });
+    if (body.length <= COMMENT_BODY_BUDGET_CHARS || kept.length === 0) {
+      if (kept.length === all.length) return body;
+      const omittedCount = all.length - kept.length;
+      const note: UnifiedCollapsible = {
+        title: "Some detail omitted",
+        body: `${omittedCount} additional section${omittedCount === 1 ? "" : "s"} were left out of this comment to stay within GitHub's comment size limit.`,
+      };
+      return renderUnifiedReviewComment(input, { ...ctxBase, extraCollapsibles: [...kept, note] });
+    }
+    kept = kept.slice(0, -1);
+  }
+}
+
 /**
  * Build the unified PR-review comment body from loopover's live data. Returns a string that STARTS with
  * the panel marker (so the existing upsert updates in place) followed by the rendered unified comment.
@@ -849,20 +892,23 @@ export function buildUnifiedCommentBody(args: UnifiedCommentBridgeArgs): string 
   const scrollCollapsible = args.beforeAfter && args.beforeAfter.length > 0 ? buildScrollPreviewCollapsible(args.beforeAfter) : null;
   const extraCollapsibles = scrollCollapsible !== null ? [...(withVisual ?? []), scrollCollapsible] : withVisual;
 
-  const body = renderUnifiedReviewComment(input, {
-    brand: args.brand ?? "LoopOver review",
-    readinessScore: args.readinessTotal,
-    signals,
-    footerMarkdown: args.footerMarkdown,
-    reviewedAt: args.reviewedAt ?? new Date(),
-    ...(args.reRunLabel !== undefined ? { reRunLabel: args.reRunLabel } : {}),
-    ...(args.generateTestsLabel !== undefined ? { generateTestsLabel: args.generateTestsLabel } : {}),
-    ...(extraCollapsibles !== undefined ? { extraCollapsibles } : {}),
-    ...(args.heldForReview ? { heldForReview: true } : {}),
-    ...(args.neverClosed ? { neverClosed: true } : {}),
-    ...(args.preflightHeld ? { preflightHeld: true } : {}),
-    commentVerbosity: args.commentVerbosity,
-  });
+  const body = renderWithinBudget(
+    input,
+    {
+      brand: args.brand ?? "LoopOver review",
+      readinessScore: args.readinessTotal,
+      signals,
+      footerMarkdown: args.footerMarkdown,
+      reviewedAt: args.reviewedAt ?? new Date(),
+      ...(args.reRunLabel !== undefined ? { reRunLabel: args.reRunLabel } : {}),
+      ...(args.generateTestsLabel !== undefined ? { generateTestsLabel: args.generateTestsLabel } : {}),
+      ...(args.heldForReview ? { heldForReview: true } : {}),
+      ...(args.neverClosed ? { neverClosed: true } : {}),
+      ...(args.preflightHeld ? { preflightHeld: true } : {}),
+      commentVerbosity: args.commentVerbosity,
+    },
+    extraCollapsibles,
+  );
 
   // Prepend the marker verbatim (matching the legacy body, which leads with the marker then a blank line)
   // so `createOrUpdatePrIntelligenceComment` finds and updates the SAME comment in place.
