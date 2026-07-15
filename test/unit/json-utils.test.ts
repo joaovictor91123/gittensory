@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { errorMessage, jsonString, normalizeRepoFullName, nowIso, parseJson, repoParts, strippedErrorMessage } from "../../src/utils/json";
+import { errorMessage, errorStack, jsonString, normalizeRepoFullName, nowIso, parseJson, repoParts, strippedErrorMessage } from "../../src/utils/json";
 
 describe("JSON and string utility helpers", () => {
   it("keeps JSON parsing and stringification fallbacks explicit", () => {
@@ -27,6 +27,18 @@ describe("JSON and string utility helpers", () => {
     expect(errorMessage("string failure", "fallback failure")).toBe("fallback failure");
     expect(strippedErrorMessage(new Error("Error: wrapped failure"), "fallback failure")).toBe("wrapped failure");
     expect(strippedErrorMessage("string failure", "fallback failure")).toBe("fallback failure");
+  });
+
+  it("errorStack extracts a real Error's stack, truncated, and returns undefined for anything else (#5010-observability)", () => {
+    const err = new Error("boom");
+    expect(errorStack(err)).toBe(err.stack?.slice(0, 500));
+    expect(errorStack(err, 5)).toBe(err.stack?.slice(0, 5));
+    expect(errorStack("string failure")).toBeUndefined();
+    expect(errorStack(null)).toBeUndefined();
+    expect(errorStack(undefined)).toBeUndefined();
+    const noStack = new Error("no stack");
+    (noStack as { stack?: string | undefined }).stack = undefined;
+    expect(errorStack(noStack)).toBeUndefined();
   });
 
   it("repoParts trims outer whitespace before splitting, matching normalizeRepoFullName", () => {

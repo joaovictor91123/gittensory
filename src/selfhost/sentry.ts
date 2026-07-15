@@ -492,7 +492,9 @@ function namedCaptureError(error: unknown, eventName?: string): Error {
  *  Sentry's default stack-trace-based grouping fragments the SAME logical failure into separate issues whenever
  *  it is captured from more than one call site (e.g. two different functions each constructing the identical
  *  `new Error("...")` message), which is exactly what happened to GITTENSORY-5/10 and GITTENSORY-C/W before this.
- *  Mirrors forwardStructuredLogToSentry's identical `scope.setFingerprint(["loopover-log", event])` discipline. */
+ *  Mirrors forwardStructuredLogToSentry's identical `scope.setFingerprint(["loopover-log", event, ev?])`
+ *  discipline (the `ev` sub-field, when present, further splits one broad `event` slug shared by several call
+ *  sites into separate issues per actual failure mode -- see that function's own comment). */
 export function captureError(
   error: unknown,
   context?: Record<string, unknown>,
@@ -633,6 +635,13 @@ export function forwardStructuredLogToSentry(line: unknown, fromErrorSink = fals
   // Sentry's own native level string (setLevel below) — critical maps back to "fatal", its Sentry-native spelling.
   const severity = loopoverSeverity === "critical" ? "fatal" : loopoverSeverity === "warning" ? "warning" : loopoverSeverity === "info" ? "info" : "error";
   const event = typeof obj.event === "string" ? obj.event : undefined;
+  // Many call sites share one broad `event` slug (e.g. every RAG failure mode logs `event:
+  // "review_context_fetch_failed"`) and rely on a finer-grained `ev` field to distinguish WHICH failure it
+  // actually was (rag_upsert_error vs. rag_retrieve_error vs. ...). Fold `ev` into both the title and the
+  // fingerprint below when present, so genuinely different failures never collapse into one misleading issue
+  // bucket that mixes their causes together (confirmed in the wild: GITTENSORY-D's own event history mixes a
+  // context-length-overflow case with an unrelated Postgres NUL-byte-rejection case).
+  const subEvent = typeof obj.ev === "string" ? obj.ev : undefined;
   // Lead the Sentry title with the real failure detail (message → error), not just the event slug, so an operator
   // sees WHAT broke straight from the issue list instead of having to open the context blob.
   const detail = typeof obj.message === "string" ? obj.message : typeof obj.error === "string" ? obj.error : undefined;
@@ -650,7 +659,7 @@ export function forwardStructuredLogToSentry(line: unknown, fromErrorSink = fals
       .filter(Boolean)
       .join(" ") || "(no message — see the log context)");
   const errorEvent = new Error(value);
-  errorEvent.name = event ?? "LoopOverLog";
+  errorEvent.name = event ? (subEvent ? `${event}/${subEvent}` : event) : "LoopOverLog";
   // This exception is synthetic: it was minted from a console line, never thrown at the failing code. Strip the
   // wrapper stack so Sentry does not attribute forwarded operational issues to this forwarding helper.
   errorEvent.stack = `${errorEvent.name}: ${value}`;
@@ -660,8 +669,8 @@ export function forwardStructuredLogToSentry(line: unknown, fromErrorSink = fals
     scope.setContext("log", safeObj);
     if (event) safeObj.event = event;
     applyOperationalTags(scope, safeObj);
-    // Group recurrences of ONE failure into a single issue (by event, not the variable detail in the value).
-    if (event) scope.setFingerprint(["loopover-log", event]);
+    // Group recurrences of ONE failure into a single issue (by event + ev, not the variable detail in the value).
+    if (event) scope.setFingerprint(["loopover-log", event, ...(subEvent ? [subEvent] : [])]);
     // Sentry uses event.transaction as the issue culprit fallback when the stack has no frames; point it at the
     // operational event slug rather than the forwarding helper.
     if (event)

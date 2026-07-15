@@ -9,6 +9,7 @@
 import { extractLinkedIssueNumbers, getIssue } from "../db/repositories";
 import { sanitizePublicComment } from "../queue-intelligence";
 import { incr, observe } from "../selfhost/metrics";
+import { errorStack } from "../utils/json";
 import { neutralizePromptInjection } from "./prompt-injection";
 import { REES_ANALYZER_NAMES, REES_ANALYZER_NAME_SET, type ReesAnalyzerName } from "./enrichment-analyzer-names";
 import type { PullRequestFileRecord } from "../types";
@@ -492,10 +493,11 @@ export async function buildReviewEnrichment(
         JSON.stringify({
           level: "error",
           event: "review_context_fetch_failed",
+          contextType: "enrichment",
+          ev: "enrichment_http_error",
           repository: input.repoFullName,
           pullNumber: input.prNumber,
           headShaPrefix: headShaPrefix(input.headSha),
-          contextType: "enrichment",
           status: response.status,
           statusText: response.statusText,
           requestId,
@@ -550,10 +552,11 @@ export async function buildReviewEnrichment(
       JSON.stringify({
         level: "error",
         event: "review_context_fetch_failed",
+        contextType: "enrichment",
+        ev: isTimeout ? "enrichment_timeout" : "enrichment_exception",
         repository: input.repoFullName,
         pullNumber: input.prNumber,
         headShaPrefix: headShaPrefix(input.headSha),
-        contextType: "enrichment",
         requestId,
         timeoutMs,
         analyzerBudgetMs,
@@ -563,6 +566,7 @@ export async function buildReviewEnrichment(
         authHeaderSent: authConfigured,
         authSecretNormalized,
         message: String(error).slice(0, 200),
+        stack: errorStack(error),
       }),
     );
     return undefined; // timeout / network / parse ⇒ fail-safe; review proceeds without the brief

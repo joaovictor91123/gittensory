@@ -981,6 +981,42 @@ describe("forwardStructuredLogToSentry — central console.log → Sentry error 
     expect(mocks.scope.setFingerprint).toHaveBeenCalledWith(["loopover-log", "orb_broker_unavailable"]);
   });
 
+  it("REGRESSION (GITTENSORY-D): further splits the fingerprint + title by the `ev` sub-field, so several call sites sharing one broad `event` slug don't collapse into one misleading issue", async () => {
+    await initSentry({ SENTRY_DSN: "d" } as unknown as NodeJS.ProcessEnv);
+    forwardStructuredLogToSentry(
+      JSON.stringify({
+        level: "error",
+        event: "review_context_fetch_failed",
+        ev: "rag_upsert_error",
+        message: "invalid byte sequence for encoding \"UTF8\": 0x00",
+      }),
+    );
+    expect(lastCapturedError().name).toBe("review_context_fetch_failed/rag_upsert_error");
+    expect(mocks.scope.setFingerprint).toHaveBeenCalledWith([
+      "loopover-log",
+      "review_context_fetch_failed",
+      "rag_upsert_error",
+    ]);
+  });
+
+  it("falls back to the plain event-only fingerprint + title when `ev` is absent (unchanged behavior)", async () => {
+    await initSentry({ SENTRY_DSN: "d" } as unknown as NodeJS.ProcessEnv);
+    forwardStructuredLogToSentry(
+      JSON.stringify({ level: "error", event: "review_context_fetch_failed", message: "no sub-event here" }),
+    );
+    expect(lastCapturedError().name).toBe("review_context_fetch_failed");
+    expect(mocks.scope.setFingerprint).toHaveBeenCalledWith(["loopover-log", "review_context_fetch_failed"]);
+  });
+
+  it("ignores a non-string `ev` field (treats it the same as absent)", async () => {
+    await initSentry({ SENTRY_DSN: "d" } as unknown as NodeJS.ProcessEnv);
+    forwardStructuredLogToSentry(
+      JSON.stringify({ level: "error", event: "review_context_fetch_failed", ev: 42, message: "m" }),
+    );
+    expect(lastCapturedError().name).toBe("review_context_fetch_failed");
+    expect(mocks.scope.setFingerprint).toHaveBeenCalledWith(["loopover-log", "review_context_fetch_failed"]);
+  });
+
   it("strips the synthetic wrapper stack so the issue culprit is not forwardStructuredLogToSentry", async () => {
     await initSentry({ SENTRY_DSN: "d" } as unknown as NodeJS.ProcessEnv);
     forwardStructuredLogToSentry(

@@ -21,6 +21,8 @@
 // agent-config + the engine) + the Cloudflare bindings, and belong to the host's review path — not this
 // additive module. The host injects concrete adapters at the call site.
 
+import { errorStack } from "../utils/json";
+
 // ── Injected infra interfaces (inlined from reviewbot src/platform/types.ts) ──────────────────────
 // These mirror the platform-adapter shapes so the host can pass its Vectorize/self-host-AI/D1-backed
 // implementations unchanged; nothing here depends on env bindings.
@@ -413,7 +415,7 @@ export async function embedTexts(
           ev: "rag_embed_batch_degraded",
           batchSize: batch.length,
           failedCount,
-          ...(batchError ? { message: String(batchError).slice(0, 200) } : {}),
+          ...(batchError ? { message: String(batchError).slice(0, 200), stack: errorStack(batchError) } : {}),
         }),
       );
     }
@@ -461,7 +463,7 @@ export async function upsertChunks(infra: RagInfra, project: string, repo: strin
     return embedded.length;
   } catch (error) {
     // ERROR level (#3894): see embedTexts's catch above -- same invisible-to-Sentry fix, same umbrella.
-    console.error(JSON.stringify({ level: "error", event: "review_context_fetch_failed", contextType: "rag", ev: "rag_upsert_error", message: String(error).slice(0, 200) }));
+    console.error(JSON.stringify({ level: "error", event: "review_context_fetch_failed", contextType: "rag", ev: "rag_upsert_error", message: String(error).slice(0, 200), stack: errorStack(error) }));
     return 0;
   }
 }
@@ -490,7 +492,7 @@ export async function deleteChunksForPaths(infra: RagInfra, project: string, rep
     }
   } catch (error) {
     // ERROR level (#3894): see embedTexts's catch above -- same invisible-to-Sentry fix, same umbrella.
-    console.error(JSON.stringify({ level: "error", event: "review_context_fetch_failed", contextType: "rag", ev: "rag_delete_error", message: String(error).slice(0, 200) }));
+    console.error(JSON.stringify({ level: "error", event: "review_context_fetch_failed", contextType: "rag", ev: "rag_delete_error", message: String(error).slice(0, 200), stack: errorStack(error) }));
   }
 }
 
@@ -606,7 +608,7 @@ export async function retrieveContextWithMetrics(
     // ERROR level (#5 review observability): emit so the central Sentry forwarder captures a broken RAG backend
     // (qdrant/embedder down) — retrieval degrades the review to diff-only, and this was previously a no-`level`
     // console.log invisible to Sentry. Keeps the `ev` tag for log continuity.
-    console.error(JSON.stringify({ level: "error", event: "review_context_fetch_failed", contextType: "rag", ev: "rag_retrieve_error", message: String(error).slice(0, 200) }));
+    console.error(JSON.stringify({ level: "error", event: "review_context_fetch_failed", contextType: "rag", ev: "rag_retrieve_error", message: String(error).slice(0, 200), stack: errorStack(error) }));
     return emptyRagRetrievalResult(configuredMinScore);
   }
 }
@@ -698,7 +700,7 @@ export async function readChunkTexts(storage: StorageAdapter, project: string, r
     for (const r of rows.results ?? []) map.set(r.id, r.text);
   } catch (error) {
     // ERROR level (#3894): see embedTexts's catch above -- same invisible-to-Sentry fix, same umbrella.
-    console.error(JSON.stringify({ level: "error", event: "review_context_fetch_failed", contextType: "rag", ev: "rag_chunk_read_error", message: String(error).slice(0, 200) }));
+    console.error(JSON.stringify({ level: "error", event: "review_context_fetch_failed", contextType: "rag", ev: "rag_chunk_read_error", message: String(error).slice(0, 200), stack: errorStack(error) }));
   }
   return map;
 }
