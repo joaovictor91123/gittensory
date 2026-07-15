@@ -31,10 +31,17 @@ export function resolveRepoCloneBaseDir(env = process.env) {
 // GitHub owner/repo names are restricted to alphanumerics, hyphens, underscores, and periods, and are never
 // exactly "." or ".." -- both are rejected here so a value like "../foo" can't make resolveRepoCloneDir's
 // join(cloneBaseDir, owner, repo) escape the intended clone directory (a real path-traversal finding).
-const REPO_SEGMENT_PATTERN = /^[A-Za-z0-9._-]+$/;
+// Exported so every other owner/repo parser in this package (#5831) shares this one definition instead of
+// duplicating or under-validating it.
+export const REPO_SEGMENT_PATTERN = /^[A-Za-z0-9._-]+$/;
 
-function isPathTraversalSegment(segment) {
+export function isPathTraversalSegment(segment) {
   return segment === "." || segment === "..";
+}
+
+/** A single owner/repo path segment is safe to use: matches the allowed character set and isn't `.`/`..`. */
+export function isValidRepoSegment(segment) {
+  return typeof segment === "string" && REPO_SEGMENT_PATTERN.test(segment) && !isPathTraversalSegment(segment);
 }
 
 // Reject values that git would interpret as options when passed as argv (e.g. `--upload-pack=...`).
