@@ -5,7 +5,7 @@
 // replacing, the claim-time check (src/miner/soft-claim.ts) -- so a stale submission never reaches the Governor
 // chokepoint (governor-chokepoint.js) as a live write attempt: check freshness first, THEN prepareOpenPrSubmission
 // (harness-submission-trigger.js), THEN the Governor. These are separate, sequentially-composed units, not nested
-// calls -- a future real call site wires them together in that order.
+// calls -- attempt-runner.js (#2337) is the real call site that wires them together in that order.
 //
 // READ-ONLY BY CONTRACT: never writes anything except its own abort-reason audit event (on staleness only, not
 // on every check -- mirrors this issue's own "log the abort reason" wording, not a per-decision audit trail).
