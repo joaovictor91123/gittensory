@@ -242,9 +242,9 @@ function BotReply({ boundary, body }: { boundary: CommandSample["boundary"]; bod
             isPrivate ? "bg-mint text-primary-foreground" : "bg-success text-background",
           )}
         >
-          G
+          L
         </span>
-        <span className="font-mono text-token-xs text-foreground">gittensory[bot]</span>
+        <span className="font-mono text-token-xs text-foreground">loopover[bot]</span>
         <span
           className={cn(
             "ml-auto rounded-token border-hairline px-1.5 py-0.5 font-mono text-token-2xs uppercase tracking-wider",
