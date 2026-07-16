@@ -17,6 +17,7 @@ import {
   getLatestScoringModelSnapshot,
   getFreshOfficialMinerDetection,
   getPullRequest,
+  listAllPullRequests,
   listPullRequests,
   listPullRequestDetailSyncStates,
   listRepoSyncSegments,
@@ -1334,5 +1335,53 @@ describe("database row parser hardening", () => {
     const raw = await env.DB.prepare("select snapshot_json from official_miner_detections where login = ?").bind("anonymous").first<{ snapshot_json: string }>();
     expect(raw?.snapshot_json).not.toMatch(/hotkey|coldkey|wallet|must-not-cache/i);
     expect(JSON.parse(raw?.snapshot_json ?? "{}")).toMatchObject({ githubId: "", githubUsername: "", issueLabels: [] });
+  });
+});
+
+// #ops-anomaly-calibration-sample-order: both list functions cap their row count, and a LIMIT with no ORDER BY
+// gives no ordering guarantee -- confirmed live on a 2930-row repo, where the resulting arbitrary 500-row slice
+// inverted src/services/outcome-calibration.ts's slop-band merge-rate comparison (which reads listPullRequests)
+// and fired a false ops_anomaly "score not discriminating" alert, even though the score discriminates correctly
+// (monotonically decreasing merge rate by rising severity) over the true full population. Ordering by recency
+// fixes this at the source, for every caller, not just calibration.
+describe("listPullRequests / listAllPullRequests ordering (#ops-anomaly-calibration-sample-order)", () => {
+  it("listPullRequests returns a repo's PRs ordered by DESCENDING number, regardless of insert order", async () => {
+    const env = createTestEnv();
+    for (const number of [3, 1, 4, 2]) {
+      await upsertPullRequestFromGitHub(env, "owner/repo", {
+        number,
+        title: `PR #${number}`,
+        state: "open",
+        user: { login: "contributor1" },
+        labels: [],
+        body: null,
+      });
+    }
+
+    const numbers = (await listPullRequests(env, "owner/repo")).map((pr) => pr.number);
+    expect(numbers).toEqual([4, 3, 2, 1]);
+  });
+
+  it("listAllPullRequests returns PRs ordered by DESCENDING createdAt across repos, regardless of insert order", async () => {
+    const env = createTestEnv();
+    const seeds: Array<{ repoFullName: string; number: number; createdAt: string }> = [
+      { repoFullName: "owner/repo-a", number: 1, createdAt: "2026-01-01T00:00:00.000Z" },
+      { repoFullName: "owner/repo-b", number: 1, createdAt: "2026-03-01T00:00:00.000Z" },
+      { repoFullName: "owner/repo-a", number: 2, createdAt: "2026-02-01T00:00:00.000Z" },
+    ];
+    for (const seed of seeds) {
+      await upsertPullRequestFromGitHub(env, seed.repoFullName, {
+        number: seed.number,
+        title: `${seed.repoFullName}#${seed.number}`,
+        state: "open",
+        user: { login: "contributor1" },
+        labels: [],
+        body: null,
+        created_at: seed.createdAt,
+      });
+    }
+
+    const ordered = (await listAllPullRequests(env)).map((pr) => `${pr.repoFullName}#${pr.number}`);
+    expect(ordered).toEqual(["owner/repo-b#1", "owner/repo-a#2", "owner/repo-a#1"]);
   });
 });

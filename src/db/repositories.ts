@@ -4254,15 +4254,25 @@ export async function markUnseenOpenPullRequestsClosed(env: Env, fullName: strin
   return Number(result.meta.changes ?? 0);
 }
 
+// Ordered by DESCENDING PR number so a repo with >500 PRs keeps its MOST RECENT ones, not an arbitrary/
+// unordered slice a plain LIMIT would otherwise return (Postgres gives no ordering guarantee without
+// ORDER BY -- confirmed live: an unordered 500-row cap on a 2930-row repo produced a skewed, non-
+// representative sample that inverted src/services/outcome-calibration.ts's slop-band merge-rate check,
+// which reads this exact function, and fired a false "score not discriminating" ops_anomaly). Every other
+// caller (MCP tools, gate-precision, quality metrics, recap) benefits the same way: recent PRs are the
+// relevant population for almost every one of them, an arbitrary old slice never was.
 export async function listPullRequests(env: Env, fullName: string): Promise<PullRequestRecord[]> {
   const db = getDb(env.DB);
-  const rows = await db.select().from(pullRequests).where(eq(pullRequests.repoFullName, fullName)).limit(500);
+  const rows = await db.select().from(pullRequests).where(eq(pullRequests.repoFullName, fullName)).orderBy(desc(pullRequests.number)).limit(500);
   return rows.map(toPullRequestRecordFromRow);
 }
 
+// Same ordering rationale as listPullRequests above, but cross-repo -- PR number resets per repo, so
+// createdAt (an ISO 8601 UTC string, sortable lexicographically) is the only field that's globally
+// comparable for "most recent" across every repo at once.
 export async function listAllPullRequests(env: Env): Promise<PullRequestRecord[]> {
   const db = getDb(env.DB);
-  const rows = await db.select().from(pullRequests).limit(2000);
+  const rows = await db.select().from(pullRequests).orderBy(desc(pullRequests.createdAt)).limit(2000);
   return rows.map(toPullRequestRecordFromRow);
 }
 
