@@ -81,7 +81,7 @@ opening a **fresh** PR. This is the entire reason to get it right before you pus
 
 ```sh
 # External contributor? Fork JSONbored/loopover on GitHub first, then clone YOUR fork:
-git clone https://github.com/<you>/gittensory && cd gittensory
+git clone https://github.com/<you>/loopover && cd loopover
 git remote add upstream https://github.com/JSONbored/loopover   # to sync main later
 nvm use            # Node 22 (.nvmrc)
 npm ci             # installs the whole workspace, incl. apps/loopover-ui — required before any check
@@ -285,8 +285,8 @@ GitHub's web editor (which needs a human browser session an AI coding tool can't
 3. **Host the images on a dedicated branch in your own fork** — never commit them to your feature
    branch, and never rely on drag-and-drop:
    ```sh
-   git worktree add ../gittensory-screenshots main
-   cd ../gittensory-screenshots
+   git worktree add ../loopover-screenshots main
+   cd ../loopover-screenshots
    git checkout --orphan screenshots       # first time; `git checkout screenshots` if you already have one
    git rm -rf . 2>/dev/null
    cp /path/to/your/*.jpg .                # JPG/PNG only -- SVG is never accepted as review evidence
@@ -294,7 +294,7 @@ GitHub's web editor (which needs a human browser session an AI coding tool can't
    git push origin screenshots
    cd -    # your feature branch's working directory was never touched
    ```
-   Reference each file as `https://raw.githubusercontent.com/<your-fork-owner>/gittensory/screenshots/<file>.jpg`,
+   Reference each file as `https://raw.githubusercontent.com/<your-fork-owner>/loopover/screenshots/<file>.jpg`,
    then embed it with the existing `<a href="URL"><img src="URL" alt="Loaded state" width="240"></a>`
    thumbnail convention.
 4. **Animated evidence — for effects no static screenshot can show** (a hover-triggered element, a
