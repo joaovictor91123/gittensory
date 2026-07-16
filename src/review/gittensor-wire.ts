@@ -20,7 +20,7 @@ import { resolveManifestOnlyFeature } from "./feature-activation";
  *  {@link gittensorEnabledRepoFullNames} short-circuits before reading a single manifest. Truthy follows the
  *  codebase convention (`/^(1|true|yes|on)$/i`, same as isImpactMapEnabled / isSelfTuneEnabled). */
 export function isGittensorPluginEnabled(env: { LOOPOVER_EXPERIMENTAL_GITTENSOR?: string | undefined }): boolean {
-  return /^(1|true|yes|on)$/i.test(env.LOOPOVER_EXPERIMENTAL_GITTENSOR ?? "");
+  return /^(1|true|yes|on)$/i.test((env.LOOPOVER_EXPERIMENTAL_GITTENSOR ?? "").trim());
 }
 
 /** Resolve whether the gittensor plugin is active for THIS repo: the operator's global env kill-switch AND an

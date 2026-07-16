@@ -21,6 +21,12 @@ describe("isPrReconciliationEnabled — default OFF, truthy convention", () => {
     for (const on of ["1", "true", "yes", "on", "TRUE", "On"]) expect(isPrReconciliationEnabled({ LOOPOVER_PR_RECONCILIATION: on })).toBe(true);
   });
 
+  it("REGRESSION (#6635): whitespace-padded truthy values still activate (matches isRagEnabled)", () => {
+    expect(isPrReconciliationEnabled({ LOOPOVER_PR_RECONCILIATION: "true\n" })).toBe(true);
+    expect(isPrReconciliationEnabled({ LOOPOVER_PR_RECONCILIATION: " 1 " })).toBe(true);
+    expect(isPrReconciliationEnabled({ LOOPOVER_PR_RECONCILIATION: "\ton\t" })).toBe(true);
+  });
+
   it("a present manifest override wins outright over the env flag, in both directions (#6558)", () => {
     expect(isPrReconciliationEnabled({ LOOPOVER_PR_RECONCILIATION: "false" }, { present: true, enabled: true })).toBe(true);
     expect(isPrReconciliationEnabled({ LOOPOVER_PR_RECONCILIATION: "true" }, { present: true, enabled: false })).toBe(false);

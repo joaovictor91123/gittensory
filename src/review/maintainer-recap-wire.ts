@@ -28,7 +28,7 @@ export function isRecapEnabled(
   manifestOverride?: MaintainerRecapManifestOverride | undefined,
 ): boolean {
   if (manifestOverride?.present) return manifestOverride.enabled;
-  return /^(1|true|yes|on)$/i.test(env.LOOPOVER_MAINTAINER_RECAP ?? "");
+  return /^(1|true|yes|on)$/i.test((env.LOOPOVER_MAINTAINER_RECAP ?? "").trim());
 }
 
 export type RecapCadence = "daily" | "weekly";

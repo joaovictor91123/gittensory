@@ -38,6 +38,12 @@ describe("isGittensorPluginEnabled", () => {
     expect(isGittensorPluginEnabled({ LOOPOVER_EXPERIMENTAL_GITTENSOR: "on" })).toBe(true);
     expect(isGittensorPluginEnabled({ LOOPOVER_EXPERIMENTAL_GITTENSOR: "yes" })).toBe(true);
   });
+
+  it("REGRESSION (#6635): whitespace-padded truthy values still activate (matches isRagEnabled)", () => {
+    expect(isGittensorPluginEnabled({ LOOPOVER_EXPERIMENTAL_GITTENSOR: "true\n" })).toBe(true);
+    expect(isGittensorPluginEnabled({ LOOPOVER_EXPERIMENTAL_GITTENSOR: " 1 " })).toBe(true);
+    expect(isGittensorPluginEnabled({ LOOPOVER_EXPERIMENTAL_GITTENSOR: "\ton\t" })).toBe(true);
+  });
 });
 
 describe("shouldEnableGittensorForRepo", () => {

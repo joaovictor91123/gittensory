@@ -37,7 +37,7 @@ export function isPrReconciliationEnabled(
   manifestOverride?: PrReconciliationManifestOverride | undefined,
 ): boolean {
   if (manifestOverride?.present) return manifestOverride.enabled;
-  return /^(1|true|yes|on)$/i.test(env.LOOPOVER_PR_RECONCILIATION ?? "");
+  return /^(1|true|yes|on)$/i.test((env.LOOPOVER_PR_RECONCILIATION ?? "").trim());
 }
 
 // Short in-isolate TTL cache for resolvePrReconciliationManifestOverride, mirroring ops-wire.ts /

@@ -68,6 +68,12 @@ describe("isRecapEnabled — default OFF, truthy convention", () => {
     for (const on of ["1", "true", "yes", "on", "TRUE", "On"]) expect(isRecapEnabled({ LOOPOVER_MAINTAINER_RECAP: on })).toBe(true);
   });
 
+  it("REGRESSION (#6635): whitespace-padded truthy values still activate (matches isRagEnabled)", () => {
+    expect(isRecapEnabled({ LOOPOVER_MAINTAINER_RECAP: "true\n" })).toBe(true);
+    expect(isRecapEnabled({ LOOPOVER_MAINTAINER_RECAP: " 1 " })).toBe(true);
+    expect(isRecapEnabled({ LOOPOVER_MAINTAINER_RECAP: "\ton\t" })).toBe(true);
+  });
+
   it("a present manifest override wins outright over the env flag, in both directions (#2250)", () => {
     expect(isRecapEnabled({ LOOPOVER_MAINTAINER_RECAP: "false" }, { present: true, enabled: true, cadence: "weekly" })).toBe(true);
     expect(isRecapEnabled({ LOOPOVER_MAINTAINER_RECAP: "true" }, { present: true, enabled: false, cadence: "weekly" })).toBe(false);
