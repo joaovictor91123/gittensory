@@ -257,10 +257,9 @@ describe("agentMaintenanceHeadMatchesGate", () => {
     await upsertRepositorySettings(env, {
       repoFullName: "JSONbored/gittensory",
       autoLabelEnabled: false,
-      reviewCheckMode: "required",
       autonomy: { merge: "auto", approve: "auto", close: "auto" },
     });
-    await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "off", publicSurface: "off", checkRunMode: "off" } });
+    await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { commentMode: "off", publicSurface: "off", checkRunMode: "off", reviewCheckMode: "required" } });
     vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
       const url = input.toString();
       if (url === "https://api.gittensor.io/miners") return Response.json([]);
@@ -1045,11 +1044,11 @@ describe("converted_to_draft gate-close (draft-dodge prevention)", () => {
     });
     await upsertRepositorySettings(env, {
       repoFullName: "JSONbored/gittensory",
-      reviewCheckMode: "required",
       autonomy: { close: "auto" },
       agentPaused: false,
       ...overrides,
     });
+    await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { reviewCheckMode: "required" } });
   }
 
   it("closes a PR immediately when the contributor converts to draft after a gate failure on the same headSha", async () => {
@@ -1173,7 +1172,8 @@ describe("converted_to_draft gate-close (draft-dodge prevention)", () => {
       },
       repositories: [{ name: "gittensory", full_name: "JSONbored/gittensory", private: false, owner: { login: "JSONbored" } }],
     });
-    await upsertRepositorySettings(env, { repoFullName: "JSONbored/gittensory", reviewCheckMode: "required", autonomy: { close: "auto" }, agentPaused: false });
+    await upsertRepositorySettings(env, { repoFullName: "JSONbored/gittensory", autonomy: { close: "auto" }, agentPaused: false });
+    await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { reviewCheckMode: "required" } });
     await recordGateBlockOutcome(env, { repoFullName: "JSONbored/gittensory", pullNumber: 42, headSha: "abc123", blockerCodes: ["missing_linked_issue"] });
 
     await processJob(env, { type: "github-webhook", deliveryId: "draft-dodge-no-write", eventName: "pull_request", payload: draftPayload("contributor") });
@@ -1203,7 +1203,8 @@ describe("converted_to_draft gate-close (draft-dodge prevention)", () => {
     // No installations row pre-seeded. processGitHubWebhook auto-upserts one from the payload's bare
     // `installation: { id: 123 }` (no permissions field, as a real pull_request payload carries), so the
     // resulting row has no explicit pull_requests:write grant — the permission check must fail CLOSED (deny).
-    await upsertRepositorySettings(env, { repoFullName: "JSONbored/gittensory", reviewCheckMode: "required", autonomy: { close: "auto" }, agentPaused: false });
+    await upsertRepositorySettings(env, { repoFullName: "JSONbored/gittensory", autonomy: { close: "auto" }, agentPaused: false });
+    await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { reviewCheckMode: "required" } });
     await recordGateBlockOutcome(env, { repoFullName: "JSONbored/gittensory", pullNumber: 42, headSha: "abc123", blockerCodes: ["missing_linked_issue"] });
 
     await processJob(env, { type: "github-webhook", deliveryId: "draft-dodge-no-install-row", eventName: "pull_request", payload: draftPayload("contributor") });
@@ -1237,7 +1238,8 @@ describe("converted_to_draft gate-close (draft-dodge prevention)", () => {
       },
       repositories: [{ name: "gittensory", full_name: "JSONbored/gittensory", private: false, owner: { login: "JSONbored" } }],
     });
-    await upsertRepositorySettings(env, { repoFullName: "JSONbored/gittensory", reviewCheckMode: "required", autonomy: { close: "auto" }, agentPaused: false });
+    await upsertRepositorySettings(env, { repoFullName: "JSONbored/gittensory", autonomy: { close: "auto" }, agentPaused: false });
+    await upsertRepoFocusManifest(env, "JSONbored/gittensory", { settings: { reviewCheckMode: "required" } });
     await recordGateBlockOutcome(env, { repoFullName: "JSONbored/gittensory", pullNumber: 42, headSha: "abc123", blockerCodes: ["missing_linked_issue"] });
     // First getInstallation call in processGitHubWebhook (installationActor derivation, unrelated to this fix)
     // resolves normally; the SECOND call is the draft-dodge readiness check itself -- that one is a genuine D1
@@ -1623,10 +1625,10 @@ describe("converted_to_draft gate-close (draft-dodge prevention)", () => {
     });
     await upsertRepositorySettings(env, {
       repoFullName: "noslash",
-      reviewCheckMode: "required",
       autonomy: { close: "auto" },
       agentPaused: false,
     });
+    await upsertRepoFocusManifest(env, "noslash", { settings: { reviewCheckMode: "required" } });
     await recordGateBlockOutcome(env, { repoFullName: "noslash", pullNumber: 77, headSha: "sha-noslash", blockerCodes: ["missing_linked_issue"] });
 
     const noslashPayload = {
@@ -4405,11 +4407,9 @@ describe("auto-action convergence: end-to-end plan+execute for the general heuri
       },
       repositories: [{ name: "gittensory", full_name: REPO, private: false, owner: { login: "JSONbored" } }],
     });
-    const { commentMode, publicSurface, checkRunMode, ...restSettingsOverrides } = settingsOverrides;
+    const { commentMode, publicSurface, checkRunMode, reviewCheckMode, linkedIssueGateMode, ...restSettingsOverrides } = settingsOverrides;
     await upsertRepositorySettings(env, {
       repoFullName: REPO,
-      reviewCheckMode: "required",
-      linkedIssueGateMode: "block", // the default blocker mechanism for these tests: missing linked issue -> gate failure
       ...restSettingsOverrides,
     });
     await upsertRepoFocusManifest(env, REPO, {
@@ -4417,6 +4417,9 @@ describe("auto-action convergence: end-to-end plan+execute for the general heuri
         commentMode: commentMode ?? "off",
         publicSurface: publicSurface ?? "off",
         checkRunMode: checkRunMode ?? "off",
+        reviewCheckMode: reviewCheckMode ?? "required",
+        // the default blocker mechanism for these tests: missing linked issue -> gate failure
+        linkedIssueGateMode: linkedIssueGateMode ?? "block",
       },
     });
     // Without a registry snapshot the gate reports a "repo_unregistered" warning finding, which keeps the

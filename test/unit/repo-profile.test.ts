@@ -42,8 +42,8 @@ describe("extractRepoProfile (#2999)", () => {
         scripts: { test: "vitest run", "test:coverage": "vitest run --coverage", lint: "eslint .", build: "tsc" },
       }),
     );
-    await upsertRepositorySettings(env, { repoFullName: REPO, reviewCheckMode: "required", requireLinkedIssue: true });
-    await upsertRepoFocusManifest(env, REPO, { linkedIssuePolicy: "required" });
+    await upsertRepositorySettings(env, { repoFullName: REPO, requireLinkedIssue: true });
+    await upsertRepoFocusManifest(env, REPO, { linkedIssuePolicy: "required", settings: { reviewCheckMode: "required" } });
 
     const profile = await extractRepoProfile(env, REPO, { now: "2026-07-05T00:00:00.000Z" });
 
@@ -249,9 +249,8 @@ describe("extractRepoProfile (#2999)", () => {
     await seedChunk(env, "src/widget.ts", "x");
     await upsertRepositorySettings(env, {
       repoFullName: REPO,
-      reviewCheckMode: "required",
     });
-    await upsertRepoFocusManifest(env, REPO, { settings: { checkRunMode: "off" } });
+    await upsertRepoFocusManifest(env, REPO, { settings: { checkRunMode: "off", reviewCheckMode: "required" } });
     const profile = await extractRepoProfile(env, REPO);
     if (!profile.present) throw new Error("expected present profile");
     expect(profile.contributionWorkflow.gatePublishesCheck).toBe(true);
@@ -266,9 +265,8 @@ describe("extractRepoProfile (#2999)", () => {
     // gate.checkMode still gets reported as publishing one.
     await upsertRepositorySettings(env, {
       repoFullName: REPO,
-      reviewCheckMode: "disabled",
     });
-    await upsertRepoFocusManifest(env, REPO, { settings: { checkRunMode: "enabled" } });
+    await upsertRepoFocusManifest(env, REPO, { settings: { checkRunMode: "enabled", reviewCheckMode: "disabled" } });
     const profile = await extractRepoProfile(env, REPO);
     if (!profile.present) throw new Error("expected present profile");
     expect(profile.contributionWorkflow.gatePublishesCheck).toBe(false);
@@ -277,7 +275,7 @@ describe("extractRepoProfile (#2999)", () => {
   it("reflects gatePublishesCheck true when reviewCheckMode is visible", async () => {
     const env = createTestEnv({});
     await seedChunk(env, "src/widget.ts", "x");
-    await upsertRepositorySettings(env, { repoFullName: REPO, reviewCheckMode: "visible" });
+    await upsertRepoFocusManifest(env, REPO, { settings: { reviewCheckMode: "visible" } });
     const profile = await extractRepoProfile(env, REPO);
     if (!profile.present) throw new Error("expected present profile");
     expect(profile.contributionWorkflow.gatePublishesCheck).toBe(true);

@@ -7,10 +7,10 @@ import {
   putCachedAiReview,
   upsertPullRequestFromGitHub,
   upsertRepositoryFromGitHub,
-  upsertRepositorySettings,
 } from "../../src/db/repositories";
 import { LoopoverMcp } from "../../src/mcp/server";
 import { INLINE_FINDINGS_METADATA_KEY } from "../../src/mcp/pr-ai-review-findings";
+import { upsertRepoFocusManifest } from "../../src/signals/focus-manifest-loader";
 import { createTestEnv } from "../helpers/d1";
 
 async function connect(env: Env, identity?: AuthIdentity): Promise<Client> {
@@ -29,7 +29,7 @@ const inlineFindings = [
 
 async function seedPublishedReview(env: Env): Promise<void> {
   await upsertRepositoryFromGitHub(env, { name: "widgets", full_name: "acme/widgets", private: false, owner: { login: "acme" } });
-  await upsertRepositorySettings(env, { repoFullName: "acme/widgets", aiReviewMode: "block" });
+  await upsertRepoFocusManifest(env, "acme/widgets", { settings: { aiReviewMode: "block" } });
   await upsertPullRequestFromGitHub(env, "acme/widgets", {
     number: 42,
     title: "Fix widget cache",
@@ -73,7 +73,7 @@ describe("MCP loopover_get_pr_ai_review_findings (#4519)", () => {
   it("returns not_found when no published AI review exists", async () => {
     const env = createTestEnv();
     await upsertRepositoryFromGitHub(env, { name: "widgets", full_name: "acme/widgets", private: false, owner: { login: "acme" } });
-    await upsertRepositorySettings(env, { repoFullName: "acme/widgets", aiReviewMode: "block" });
+    await upsertRepoFocusManifest(env, "acme/widgets", { settings: { aiReviewMode: "block" } });
     await upsertPullRequestFromGitHub(env, "acme/widgets", {
       number: 7,
       title: "Draft",
@@ -112,7 +112,7 @@ describe("MCP loopover_get_pr_ai_review_findings (#4519)", () => {
   it("returns a zero-finding ready summary when the published review has no inline findings", async () => {
     const env = createTestEnv();
     await upsertRepositoryFromGitHub(env, { name: "widgets", full_name: "acme/widgets", private: false, owner: { login: "acme" } });
-    await upsertRepositorySettings(env, { repoFullName: "acme/widgets", aiReviewMode: "block" });
+    await upsertRepoFocusManifest(env, "acme/widgets", { settings: { aiReviewMode: "block" } });
     await upsertPullRequestFromGitHub(env, "acme/widgets", {
       number: 99,
       title: "Clean",
@@ -136,7 +136,7 @@ describe("MCP loopover_get_pr_ai_review_findings (#4519)", () => {
   it("returns ai_review_off when the repo has AI review disabled", async () => {
     const env = createTestEnv();
     await upsertRepositoryFromGitHub(env, { name: "widgets", full_name: "acme/widgets", private: false, owner: { login: "acme" } });
-    await upsertRepositorySettings(env, { repoFullName: "acme/widgets", aiReviewMode: "off" });
+    await upsertRepoFocusManifest(env, "acme/widgets", { settings: { aiReviewMode: "off" } });
     await upsertPullRequestFromGitHub(env, "acme/widgets", {
       number: 8,
       title: "Draft",
@@ -186,7 +186,7 @@ describe("MCP loopover_get_pr_ai_review_findings (#4519)", () => {
       private: true,
       owner: { login: "victimco" },
     });
-    await upsertRepositorySettings(env, { repoFullName: "victimco/private-roadmap", aiReviewMode: "block" });
+    await upsertRepoFocusManifest(env, "victimco/private-roadmap", { settings: { aiReviewMode: "block" } });
     await upsertPullRequestFromGitHub(env, "victimco/private-roadmap", {
       number: 1,
       title: "Secret",
