@@ -308,6 +308,26 @@ describe("loopover-mcp CLI — doctor", () => {
     });
   });
 
+  it("prints API compatibility unknown when the minimum version is unparseable (#6263)", async () => {
+    tempDir = mkdtempSync(join(tmpdir(), "loopover-cli-"));
+    const url = await startFixtureServer({ minMcpVersion: "not-a-semver" });
+    const env = {
+      LOOPOVER_API_URL: url,
+      LOOPOVER_TOKEN: "session-token",
+      LOOPOVER_CONFIG_DIR: tempDir,
+      LOOPOVER_SKIP_NPM_VERSION_CHECK: "true",
+    };
+    const statusJson = JSON.parse(await runAsync(["status", "--json"], env)) as {
+      apiCompatibility: { status: string; minVersion: string };
+    };
+    expect(statusJson.apiCompatibility).toMatchObject({ status: "unknown", minVersion: "not-a-semver" });
+
+    // Human-readable status used to omit this arm entirely; keep it visible like doctor().
+    const statusOutput = await runAsync(["status"], env);
+    expect(statusOutput).toContain("unsupported minimum client version");
+    expect(statusOutput).toContain("not-a-semver");
+  });
+
   it("flags API compatibility mismatches with upgrade guidance", async () => {
     tempDir = mkdtempSync(join(tmpdir(), "loopover-cli-"));
     const url = await startFixtureServer({ minMcpVersion: "9.0.0" });

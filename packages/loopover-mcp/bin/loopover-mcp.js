@@ -3174,6 +3174,9 @@ async function status(options) {
       process.stdout.write(`API compatibility: compatible (minimum ${packageName}@${apiCompatibility.minVersion}).\n`);
     } else if (apiCompatibility.status === "unavailable") {
       process.stdout.write(`API compatibility: unavailable (${apiCompatibility.reason ?? "unknown"}).\n`);
+    } else if (apiCompatibility.status === "unknown") {
+      // Mirror doctor()'s unknown arm (#6263): an unparseable minimum version must still surface in human output.
+      process.stdout.write(`API reported an unsupported minimum client version (${apiCompatibility.minVersion}).\n`);
     }
   }
 }
