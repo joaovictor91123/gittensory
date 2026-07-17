@@ -33,7 +33,9 @@ export function parseIdeaFeasibilityArgs(args) {
     }
     if (token === "--hint") {
       const value = args[i + 1];
-      if (value === undefined || value.startsWith("-")) {
+      // A whitespace-only hint is as empty as a missing one (#6766): it declares no testable success signal, so
+      // it gets the same rejection rather than sailing through as a real objective signal.
+      if (value === undefined || value.startsWith("-") || value.trim() === "") {
         return { error: "--hint requires a value." };
       }
       options.acceptanceHints.push(value);

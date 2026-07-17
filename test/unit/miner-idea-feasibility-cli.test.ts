@@ -71,6 +71,15 @@ describe("parseIdeaFeasibilityArgs (#5671)", () => {
     });
   });
 
+  it("REGRESSION (#6766): rejects a whitespace-only --hint the same way as a missing one", () => {
+    // A blank hint declares no testable success signal, so it must not sail through as a real one.
+    for (const blank of ["   ", "\t", " \n "]) {
+      expect(parseIdeaFeasibilityArgs(["unclaimed", "none", "--hint", blank])).toEqual({
+        error: "--hint requires a value.",
+      });
+    }
+  });
+
   it("rejects --hint whose value looks like another flag", () => {
     expect(parseIdeaFeasibilityArgs(["unclaimed", "none", "--hint", "--json"])).toEqual({
       error: "--hint requires a value.",

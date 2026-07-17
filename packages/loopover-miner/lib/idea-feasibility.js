@@ -36,7 +36,11 @@ export function deriveIdeaIssueStatus(idea, resolved) {
   // Out of the loop's scope: the idea does not resolve to a repo the loop can act on.
   if (!resolved.targetResolvable) return "missing";
   // Impossible to evaluate objectively: no declared success signal, so the loop could never test its own output.
-  const objectiveSignals = idea.acceptanceHints?.length ?? 0;
+  // Count CONTENT, not array length (#6766): a blank/whitespace-only hint declares nothing testable, so it must
+  // not pass as an objective signal just by occupying a slot.
+  const objectiveSignals = (idea.acceptanceHints ?? []).filter(
+    (hint) => typeof hint === "string" && hint.trim() !== "",
+  ).length;
   if (objectiveSignals === 0) return "invalid";
   return "ready";
 }

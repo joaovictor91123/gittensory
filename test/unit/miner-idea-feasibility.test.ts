@@ -28,6 +28,17 @@ describe("deriveIdeaIssueStatus (#5671)", () => {
     expect(deriveIdeaIssueStatus({ acceptanceHints: [] }, { targetResolvable: true })).toBe("invalid");
   });
 
+  it("REGRESSION (#6766): returns 'invalid' for blank/whitespace-only hints — a slot is not a signal", () => {
+    // The count used to be array LENGTH, so a whitespace-only hint declared nothing testable yet passed as
+    // "ready", contradicting the module's own "no objective success signal is invalid" contract.
+    expect(deriveIdeaIssueStatus({ acceptanceHints: ["   "] }, { targetResolvable: true })).toBe("invalid");
+    expect(deriveIdeaIssueStatus({ acceptanceHints: ["", "\t", "\n  "] }, { targetResolvable: true })).toBe("invalid");
+  });
+
+  it("REGRESSION (#6766): a real hint alongside blank ones still counts as an objective signal", () => {
+    expect(deriveIdeaIssueStatus({ acceptanceHints: ["  ", "retries on 5xx"] }, { targetResolvable: true })).toBe("ready");
+  });
+
   it("returns 'ready' when the idea resolves and carries at least one objective success signal", () => {
     expect(deriveIdeaIssueStatus({ acceptanceHints: ["uploads retry on 5xx"] }, { targetResolvable: true })).toBe("ready");
   });
