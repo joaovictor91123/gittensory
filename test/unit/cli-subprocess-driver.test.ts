@@ -41,8 +41,22 @@ describe("createCliSubprocessCodingAgentDriver (#4266)", () => {
       "json",
       "--permission-mode",
       "acceptEdits",
+      "--allowedTools",
+      "Read",
+      "Bash",
+      "--",
       "Fix the pagination bug.",
     ]);
+  });
+
+  it("#6840: grants Read and Bash in addition to acceptEdits -- acceptEdits alone denies every Read/Bash tool call, silently blocking all real work", async () => {
+    const { spawn, calls } = fakeSpawn({ stdout: "done", code: 0 });
+    const driver = createCliSubprocessCodingAgentDriver({ command: "claude", spawn });
+    await driver.run(TASK);
+    const args = calls[0]?.args ?? [];
+    const allowedToolsIndex = args.indexOf("--allowedTools");
+    expect(allowedToolsIndex).toBeGreaterThan(-1);
+    expect(args.slice(allowedToolsIndex + 1, allowedToolsIndex + 3)).toEqual(["Read", "Bash"]);
   });
 
   it("uses codex's own real default argv (the exec subcommand, not claude's flags)", async () => {

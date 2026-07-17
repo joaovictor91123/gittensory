@@ -92,15 +92,22 @@ const CODING_AGENT_ENV_ALLOWLIST = [
  *  - `--output-format json` produces a single parseable JSON result on stdout, matching `claudeErrorStatus`'s
  *    own `JSON.parse(stdout.trim())` assumption (which was already written for this shape, just never
  *    actually triggered because this flag was never passed).
- *  - `--permission-mode acceptEdits` is the same edit-permission scope the Agent-SDK driver already uses
- *    (#4267) -- file edits run unattended inside the scoped worktree, nothing broader.
+ *  - `--permission-mode acceptEdits` alone (the CLI's own edit-permission scope, matching the label the
+ *    Agent-SDK driver's `permissionMode` also uses, #4267) only auto-approves file EDIT tool calls -- it
+ *    does NOT grant `Read` or `Bash`, so a real task (which needs both to explore the repo and run tests)
+ *    got every one of those calls denied in a headless `--print` invocation with no TTY to resolve an
+ *    interactive prompt, silently producing zero real work every time (#6840). `--allowedTools Read Bash`
+ *    grants exactly the two additional tool classes the task actually needs, confirmed via a live
+ *    end-to-end reproduction (zero denials, a real fix + test committed) -- deliberately narrower than
+ *    `--permission-mode bypassPermissions`, which also disables edit-scope confirmation and any other
+ *    safety rail the CLI has, not just the Read/Bash gap this task actually hits.
  *  There is no turn-budget flag on the real CLI (verified via `claude --help`) and no acceptance-criteria
  *  flag either -- the coding agent discovers `task.acceptanceCriteriaPath` itself via its own Read tool
  *  inside the scoped working directory, exactly like the Agent-SDK driver already does (agent-sdk-driver.ts
  *  never passes it as a distinct option either; only `task.instructions` is forwarded as the prompt there
  *  too). The wall-clock `timeoutMs` (already implemented) is this provider's only real turn/cost ceiling. */
 export function defaultClaudeCliArgs(task: CodingAgentDriverTask): string[] {
-  return ["--print", "--output-format", "json", "--permission-mode", "acceptEdits", task.instructions];
+  return ["--print", "--output-format", "json", "--permission-mode", "acceptEdits", "--allowedTools", "Read", "Bash", "--", task.instructions];
 }
 
 /** Real, verified `codex exec` non-interactive argv (confirmed against `codex exec --help`, #5135
