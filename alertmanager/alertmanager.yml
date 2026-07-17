@@ -118,9 +118,23 @@ receivers:
   #       # auth_username: "alertmanager@example.com"
   #       # auth_password: "CHANGEME"
 
-  # ── Generic webhook (PagerDuty bridge, custom handler, etc.) ──────────────────
-  # POSTs the Alertmanager JSON payload to any HTTP endpoint.
+  # ── PagerDuty (native — prefer this over the generic webhook below) ───────────
+  # Create a PagerDuty Service with an "Events API v2" integration, then use its
+  # Integration Key here. Keep the key out of git with routing_key_file (mount a file
+  # at /etc/alertmanager/pagerduty_routing_key), or inline it with routing_key in a
+  # non-committed deploy copy of this file.
   # - name: "oncall-pager"
+  #   pagerduty_configs:
+  #     - routing_key_file: /etc/alertmanager/pagerduty_routing_key
+  #       send_resolved: true
+  #       severity: '{{ .CommonLabels.severity }}'
+  #       description: '{{ .CommonAnnotations.summary }}'
+
+  # ── Generic webhook (custom handler, a non-PagerDuty on-call tool, etc.) ──────
+  # POSTs the Alertmanager JSON payload to any HTTP endpoint. Prefer a native
+  # integration (slack_configs / discord_configs / pagerduty_configs / …) over this
+  # when your on-call tool has one — this is the fallback for anything that doesn't.
+  # - name: "custom-webhook"
   #   webhook_configs:
   #     - url: "https://your-endpoint.example.com/alerts"
   #       send_resolved: true
