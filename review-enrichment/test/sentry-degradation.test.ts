@@ -36,7 +36,7 @@ function sentryHarness() {
       },
       flush: async () => true,
     },
-    { release: "gittensory-rees@test", environment: "test" },
+    { release: "loopover-rees@test", environment: "test" },
   );
   return { tags, contexts, fingerprints, levels, captured };
 }
@@ -49,7 +49,7 @@ test("captureAnalyzerDegradation is inert when Sentry is disabled", () => {
   assert.doesNotThrow(() =>
     captureAnalyzerDegradation(new Error("boom"), {
       analyzer: "dependency",
-      repoFullName: "JSONbored/gittensory",
+      repoFullName: "JSONbored/loopover",
       prNumber: 7,
       headSha: "abc123",
       timeoutMs: 8000,
@@ -64,7 +64,7 @@ test("captureAnalyzerDegradation tags and fingerprints sanitized analyzer failur
 
   captureAnalyzerDegradation(new Error("registry timeout"), {
     analyzer: "dependency",
-    repoFullName: "JSONbored/gittensory",
+    repoFullName: "JSONbored/loopover",
     prNumber: 7,
     headSha: "abc123",
     timeoutMs: 8000,
@@ -77,9 +77,9 @@ test("captureAnalyzerDegradation tags and fingerprints sanitized analyzer failur
   assert.deepEqual(sentry.fingerprints, [["rees-analyzer-degraded", "dependency"]]);
   assert.equal(sentry.tags.event, "rees_analyzer_degraded");
   assert.equal(sentry.tags.analyzer, "dependency");
-  assert.equal(sentry.tags.repo, "JSONbored/gittensory");
+  assert.equal(sentry.tags.repo, "JSONbored/loopover");
   assert.equal(sentry.tags.pullNumber, "7");
-  assert.equal(sentry.tags.release, "gittensory-rees@test");
+  assert.equal(sentry.tags.release, "loopover-rees@test");
   assert.equal(sentry.tags.environment, "test");
   assert.equal(sentry.captured[0].message, "registry timeout");
 
@@ -87,11 +87,11 @@ test("captureAnalyzerDegradation tags and fingerprints sanitized analyzer failur
   assert.deepEqual(analyzerContext, {
     event: "rees_analyzer_degraded",
     analyzer: "dependency",
-    repoFullName: "JSONbored/gittensory",
+    repoFullName: "JSONbored/loopover",
     prNumber: 7,
     headShaPrefix: "abc123",
     timeoutMs: 8000,
-    release: "gittensory-rees@test",
+    release: "loopover-rees@test",
     environment: "test",
   });
   const serializedContext = JSON.stringify(analyzerContext);
@@ -105,7 +105,7 @@ test("captureAnalyzerDegradation groups by partialReason (WHY), not analyzer nam
 
   captureAnalyzerDegradation(new Error("analyzer_timeout"), {
     analyzer: "installScript",
-    repoFullName: "JSONbored/gittensory",
+    repoFullName: "JSONbored/loopover",
     prNumber: 7,
     headSha: "abc123",
     timeoutMs: 1400,
@@ -113,7 +113,7 @@ test("captureAnalyzerDegradation groups by partialReason (WHY), not analyzer nam
   } as never);
   captureAnalyzerDegradation(new Error("analyzer_timeout"), {
     analyzer: "nativeBuild",
-    repoFullName: "JSONbored/gittensory",
+    repoFullName: "JSONbored/loopover",
     prNumber: 8,
     headSha: "def456",
     timeoutMs: 1400,
@@ -134,7 +134,7 @@ test("captureAnalyzerDegradation falls back to analyzer name when partialReason 
 
   captureAnalyzerDegradation(new Error("boom"), {
     analyzer: "dependency",
-    repoFullName: "JSONbored/gittensory",
+    repoFullName: "JSONbored/loopover",
     prNumber: 7,
     headSha: "abc123",
     timeoutMs: 8000,
@@ -239,7 +239,7 @@ test("captureAnalyzerDegradation attaches safe attribution context for history f
     analysisElapsedMs: 6812,
     requestId: "req-123",
     traceId: "0123456789abcdef0123456789abcdef",
-    release: "gittensory-rees@test",
+    release: "loopover-rees@test",
     environment: "test",
   });
   const serializedContext = JSON.stringify(analyzerContext);
@@ -254,7 +254,7 @@ test("buildBrief stays fail-open and captures a degraded analyzer", async () => 
 
   const brief = await buildBrief(
     {
-      repoFullName: "JSONbored/gittensory",
+      repoFullName: "JSONbored/loopover",
       prNumber: 42,
       headSha: "head-sha",
       analyzers: ["dependency"],
@@ -271,7 +271,7 @@ test("buildBrief stays fail-open and captures a degraded analyzer", async () => 
   assert.equal(brief.partial, true);
   assert.equal(brief.analyzerStatus.dependency, "degraded");
   assert.deepEqual(brief.findings, {});
-  assert.equal(brief.repoFullName, "JSONbored/gittensory");
+  assert.equal(brief.repoFullName, "JSONbored/loopover");
   assert.equal(brief.prNumber, 42);
   assert.equal(brief.telemetry.analyzers.dependency.partialReason, "analyzer_error");
   assert.equal(JSON.stringify(brief.telemetry).includes(fakeToken), false);
@@ -279,7 +279,7 @@ test("buildBrief stays fail-open and captures a degraded analyzer", async () => 
   assert.equal(sentry.captured.length, 1);
   assert.equal(sentry.captured[0].message, "analyzer_error");
   assert.equal(sentry.tags.analyzer, "dependency");
-  assert.equal(sentry.tags.repo, "JSONbored/gittensory");
+  assert.equal(sentry.tags.repo, "JSONbored/loopover");
   assert.equal(sentry.tags.pullNumber, "42");
   assert.equal(sentry.tags.event, "rees_analyzer_degraded");
   const analyzerContext = sentry.contexts.rees_analyzer as Record<string, unknown>;
@@ -301,13 +301,13 @@ test("captureRouteError applies the route-level fingerprint and allowlisted tags
   assert.equal(sentry.tags.event, "rees_route_error");
   assert.equal(sentry.tags.route, "/v1/enrich");
   assert.equal(sentry.tags.method, "POST");
-  assert.equal(sentry.tags.release, "gittensory-rees@test");
+  assert.equal(sentry.tags.release, "loopover-rees@test");
   assert.equal(sentry.tags.environment, "test");
   assert.deepEqual(sentry.contexts.rees_route, {
     event: "rees_route_error",
     route: "/v1/enrich",
     method: "POST",
-    release: "gittensory-rees@test",
+    release: "loopover-rees@test",
     environment: "test",
   });
 });
@@ -319,11 +319,11 @@ test("captureUnhandledError fingerprints process-level failures by event class",
 
   assert.deepEqual(sentry.fingerprints, [["rees-process-error", "rees_uncaught_exception"]]);
   assert.equal(sentry.tags.event, "rees_uncaught_exception");
-  assert.equal(sentry.tags.release, "gittensory-rees@test");
+  assert.equal(sentry.tags.release, "loopover-rees@test");
   assert.equal(sentry.tags.environment, "test");
   assert.deepEqual(sentry.contexts.rees_process, {
     event: "rees_uncaught_exception",
-    release: "gittensory-rees@test",
+    release: "loopover-rees@test",
     environment: "test",
   });
 });
@@ -332,7 +332,7 @@ test("captureSourcemapUploadFailure applies stable upload grouping and safe tags
   const sentry = sentryHarness();
 
   captureSourcemapUploadFailure(new Error("upload failed"), {
-    release: "gittensory-rees@test",
+    release: "loopover-rees@test",
     railwayDeploymentId: "railway-deploy-123",
     strict: true,
     sha: "abcdef1234567890",
@@ -341,12 +341,12 @@ test("captureSourcemapUploadFailure applies stable upload grouping and safe tags
 
   assert.deepEqual(sentry.fingerprints, [["rees-sourcemap-upload-failed"]]);
   assert.equal(sentry.tags.event, "rees_sourcemap_upload_failed");
-  assert.equal(sentry.tags.release, "gittensory-rees@test");
+  assert.equal(sentry.tags.release, "loopover-rees@test");
   assert.equal(sentry.tags.environment, "test");
   assert.equal(sentry.tags.railwayDeploymentId, "railway-deploy-123");
   assert.deepEqual(sentry.contexts.rees_sourcemap_upload, {
     event: "rees_sourcemap_upload_failed",
-    release: "gittensory-rees@test",
+    release: "loopover-rees@test",
     railwayDeploymentId: "railway-deploy-123",
     strict: true,
     sha: "abcdef1234567890",
@@ -360,7 +360,7 @@ test("buildBrief normalizes unsafe analyzer partial reasons before response tele
 
   const brief = await buildBrief(
     {
-      repoFullName: "JSONbored/gittensory",
+      repoFullName: "JSONbored/loopover",
       prNumber: 42,
       analyzers: ["history"],
       linkedIssue: { number: 9, title: "add history context" },
@@ -447,7 +447,7 @@ test("buildBrief treats an explicit empty analyzer list as run none", async () =
 
   const brief = await buildBrief(
     {
-      repoFullName: "JSONbored/gittensory",
+      repoFullName: "JSONbored/loopover",
       prNumber: 42,
       headSha: "head-sha",
       analyzers: [],

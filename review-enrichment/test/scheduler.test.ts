@@ -7,7 +7,7 @@ test("fast profile skips GitHub-heavy defaults without running them", async () =
   let ran = false;
   const brief = await buildBrief(
     {
-      repoFullName: "JSONbored/gittensory",
+      repoFullName: "JSONbored/loopover",
       prNumber: 1811,
       profile: "fast",
       githubToken: "token",
@@ -34,7 +34,7 @@ test("explicit analyzer selection overrides profile membership while retaining b
   let sawTimeoutMs = 0;
   const brief = await buildBrief(
     {
-      repoFullName: "JSONbored/gittensory",
+      repoFullName: "JSONbored/loopover",
       prNumber: 1811,
       profile: "fast",
       analyzers: ["history"],
@@ -65,7 +65,7 @@ test("slow analyzers time out inside the reserved response budget", async () => 
   const started = Date.now();
   const brief = await buildBrief(
     {
-      repoFullName: "JSONbored/gittensory",
+      repoFullName: "JSONbored/loopover",
       prNumber: 1811,
       analyzers: ["history"],
       githubToken: "token",
@@ -96,7 +96,7 @@ test("cost classes run in priority order instead of starting all at once", async
 
   const brief = await buildBrief(
     {
-      repoFullName: "JSONbored/gittensory",
+      repoFullName: "JSONbored/loopover",
       prNumber: 1811,
       analyzers: ["secret", "dependency", "history"],
       githubToken: "token",
@@ -158,7 +158,7 @@ test("registry analyzers skip when their relevant inputs are absent", async () =
   let dependencyRan = false;
   const brief = await buildBrief(
     {
-      repoFullName: "JSONbored/gittensory",
+      repoFullName: "JSONbored/loopover",
       prNumber: 1811,
       files: [{ path: "src/a.ts", patch: "@@ -1,0 +1,1 @@\n+export const a = 1;" }],
     },
@@ -183,7 +183,7 @@ test("added-line analyzers skip uncapped patches with no additions", async () =>
   let secretRan = false;
   const brief = await buildBrief(
     {
-      repoFullName: "JSONbored/gittensory",
+      repoFullName: "JSONbored/loopover",
       prNumber: 1811,
       analyzers: ["secret"],
       files: [
@@ -211,7 +211,7 @@ test("added-line analyzers run when patch scan is capped before additions", asyn
   const ran = new Set();
   const brief = await buildBrief(
     {
-      repoFullName: "JSONbored/gittensory",
+      repoFullName: "JSONbored/loopover",
       prNumber: 1811,
       analyzers: ["redos", "secret", "secretLog"],
       files: [
@@ -251,7 +251,7 @@ test("actionPin runs for mixed-case workflow paths", async () => {
   let actionPinRan = false;
   const brief = await buildBrief(
     {
-      repoFullName: "JSONbored/gittensory",
+      repoFullName: "JSONbored/loopover",
       prNumber: 2516,
       analyzers: ["actionPin"],
       files: [
@@ -278,7 +278,7 @@ test("lockfileDrift runs for mixed-case lockfile paths", async () => {
   let lockfileDriftRan = false;
   const brief = await buildBrief(
     {
-      repoFullName: "JSONbored/gittensory",
+      repoFullName: "JSONbored/loopover",
       prNumber: 2611,
       analyzers: ["lockfileDrift"],
       files: [
@@ -305,7 +305,7 @@ test("eol runs for a *.dockerfile path (gate shares the analyzer's Dockerfile pr
   let eolRan = false;
   const brief = await buildBrief(
     {
-      repoFullName: "JSONbored/gittensory",
+      repoFullName: "JSONbored/loopover",
       prNumber: 2940,
       analyzers: ["eol"],
       files: [
@@ -332,7 +332,7 @@ test("eol runs for runtime.txt and Gemfile paths (gate shares isRuntimePinPath)"
   let eolRan = false;
   const brief = await buildBrief(
     {
-      repoFullName: "JSONbored/gittensory",
+      repoFullName: "JSONbored/loopover",
       prNumber: 3253,
       analyzers: ["eol"],
       files: [

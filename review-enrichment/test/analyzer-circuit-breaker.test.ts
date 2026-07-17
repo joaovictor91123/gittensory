@@ -15,7 +15,7 @@ afterEach(() => {
 });
 
 const baseReq = {
-  repoFullName: "JSONbored/gittensory",
+  repoFullName: "JSONbored/loopover",
   prNumber: 1811,
   analyzers: ["history"],
   githubToken: "token",
@@ -311,8 +311,8 @@ test("REGRESSION: a half-open probe claim is not leaked when the SAME planning p
 test("REGRESSION: repoFullName casing does not split one repository's failures across separate circuit entries", async () => {
   let calls = 0;
   const failing = { history: async () => { calls += 1; throw new Error("boom"); } };
-  const lowerReq = { ...baseReq, repoFullName: "jsonbored/gittensory" };
-  const upperReq = { ...baseReq, repoFullName: "JSONbored/Gittensory" };
+  const lowerReq = { ...baseReq, repoFullName: "jsonbored/loopover" };
+  const upperReq = { ...baseReq, repoFullName: "JSONbored/Loopover" };
   await buildBrief(lowerReq, failing);
   await buildBrief(upperReq, failing);
   await buildBrief(lowerReq, failing);

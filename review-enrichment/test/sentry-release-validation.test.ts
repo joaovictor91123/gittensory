@@ -18,8 +18,8 @@ function validationEnv(overrides: Record<string, string | undefined> = {}): Node
   return {
     SENTRY_AUTH_TOKEN: "test-token",
     SENTRY_ORG: "jsonbored",
-    SENTRY_PROJECT: "gittensory",
-    SENTRY_RELEASE: "gittensory-rees@abc123",
+    SENTRY_PROJECT: "loopover",
+    SENTRY_RELEASE: "loopover-rees@abc123",
     SENTRY_COMMIT_SHA: "abc123",
     SENTRY_DEPLOY_NAME: "deploy-1",
     SENTRY_ENVIRONMENT: "production",
@@ -33,8 +33,8 @@ test("loadSentryReleaseValidationConfig resolves exact release validation defaul
     loadSentryReleaseValidationConfig({
       SENTRY_AUTH_TOKEN: "token",
       SENTRY_ORG: "jsonbored",
-      SENTRY_PROJECT: "gittensory",
-      SENTRY_RELEASE: "gittensory-rees@abc123",
+      SENTRY_PROJECT: "loopover",
+      SENTRY_RELEASE: "loopover-rees@abc123",
       RAILWAY_GIT_COMMIT_SHA: "abc123",
       RAILWAY_DEPLOYMENT_ID: "deploy-1",
       RAILWAY_ENVIRONMENT_NAME: "production",
@@ -42,8 +42,8 @@ test("loadSentryReleaseValidationConfig resolves exact release validation defaul
     {
       authToken: "token",
       org: "jsonbored",
-      project: "gittensory",
-      release: "gittensory-rees@abc123",
+      project: "loopover",
+      release: "loopover-rees@abc123",
       baseUrl: "https://sentry.io",
       expectedCommitSha: "abc123",
       expectedDeployName: "deploy-1",
@@ -62,20 +62,20 @@ test("validateSentryRelease verifies finalized release, commits, and deploy", as
     assert.equal((init?.headers as Record<string, string>).authorization, "Bearer test-token");
     const path = new URL(String(input)).pathname;
     calls.push(path);
-    if (path === "/api/0/organizations/jsonbored/releases/gittensory-rees%40abc123/") {
+    if (path === "/api/0/organizations/jsonbored/releases/loopover-rees%40abc123/") {
       return response({
-        version: "gittensory-rees@abc123",
+        version: "loopover-rees@abc123",
         dateReleased: "2026-06-29T00:00:00Z",
         commitCount: 1,
         deployCount: 1,
-        projects: [{ slug: "gittensory" }],
+        projects: [{ slug: "loopover" }],
         lastDeploy: { name: "deploy-1", environment: "production" },
       });
     }
-    if (path === "/api/0/organizations/jsonbored/releases/gittensory-rees%40abc123/commits/") {
+    if (path === "/api/0/organizations/jsonbored/releases/loopover-rees%40abc123/commits/") {
       return response([{ id: "abc123" }]);
     }
-    if (path === "/api/0/organizations/jsonbored/releases/gittensory-rees%40abc123/deploys/") {
+    if (path === "/api/0/organizations/jsonbored/releases/loopover-rees%40abc123/deploys/") {
       return response([{ name: "deploy-1", environment: "production" }]);
     }
     return response({ detail: "not found" }, 404);
@@ -83,14 +83,14 @@ test("validateSentryRelease verifies finalized release, commits, and deploy", as
 
   const result = await validateSentryRelease(validationEnv(), fetchImpl);
 
-  assert.equal(result.release, "gittensory-rees@abc123");
+  assert.equal(result.release, "loopover-rees@abc123");
   assert.equal(result.finalized, true);
   assert.equal(result.commitCount, 1);
   assert.equal(result.deployCount, 1);
   assert.deepEqual(calls, [
-    "/api/0/organizations/jsonbored/releases/gittensory-rees%40abc123/",
-    "/api/0/organizations/jsonbored/releases/gittensory-rees%40abc123/commits/",
-    "/api/0/organizations/jsonbored/releases/gittensory-rees%40abc123/deploys/",
+    "/api/0/organizations/jsonbored/releases/loopover-rees%40abc123/",
+    "/api/0/organizations/jsonbored/releases/loopover-rees%40abc123/commits/",
+    "/api/0/organizations/jsonbored/releases/loopover-rees%40abc123/deploys/",
   ]);
 });
 
@@ -100,11 +100,11 @@ test("validateSentryRelease rejects a release missing the expected commit", asyn
     if (path.endsWith("/commits/")) return response([{ id: "def456" }]);
     if (path.endsWith("/deploys/")) return response([{ name: "deploy-1", environment: "production" }]);
     return response({
-      version: "gittensory-rees@abc123",
+      version: "loopover-rees@abc123",
       dateReleased: "2026-06-29T00:00:00Z",
       commitCount: 1,
       deployCount: 1,
-      projects: [{ slug: "gittensory" }],
+      projects: [{ slug: "loopover" }],
     });
   };
 
@@ -132,20 +132,20 @@ test("REGRESSION: validateSentryRelease does NOT enforce the expected-commit mat
     if (path.endsWith("/commits/")) return response([{ id: "def456" }]);
     if (path.endsWith("/deploys/")) return response([{ name: "deploy-1", environment: "production" }]);
     return response({
-      version: "gittensory-rees@abc123",
+      version: "loopover-rees@abc123",
       dateReleased: "2026-06-29T00:00:00Z",
       commitCount: 1,
       deployCount: 1,
-      projects: [{ slug: "gittensory" }],
+      projects: [{ slug: "loopover" }],
     });
   };
 
   const result = await validateSentryRelease(validationEnv({ SENTRY_REQUIRE_COMMITS: "false" }), fetchImpl);
-  assert.equal(result.release, "gittensory-rees@abc123");
+  assert.equal(result.release, "loopover-rees@abc123");
   // Non-strict mode must not even CALL the commits endpoint -- confirmed below with a second regression pinning
   // this exact call-skip, since a real Sentry API hiccup on /commits/ would otherwise still fail a non-strict
   // deploy (sentryJson throws on any non-OK response) even though no commit check would run on the result.
-  assert.equal(calls.includes("/api/0/organizations/jsonbored/releases/gittensory-rees%40abc123/commits/"), false);
+  assert.equal(calls.includes("/api/0/organizations/jsonbored/releases/loopover-rees%40abc123/commits/"), false);
 });
 
 test("REGRESSION: validateSentryRelease never calls the commits endpoint at all when SENTRY_REQUIRE_COMMITS=false, even if that endpoint is unhealthy", async () => {
@@ -158,16 +158,16 @@ test("REGRESSION: validateSentryRelease never calls the commits endpoint at all 
     if (path.endsWith("/commits/")) return response({ detail: "internal error" }, 500);
     if (path.endsWith("/deploys/")) return response([{ name: "deploy-1", environment: "production" }]);
     return response({
-      version: "gittensory-rees@abc123",
+      version: "loopover-rees@abc123",
       dateReleased: "2026-06-29T00:00:00Z",
       commitCount: 1,
       deployCount: 1,
-      projects: [{ slug: "gittensory" }],
+      projects: [{ slug: "loopover" }],
     });
   };
 
   const result = await validateSentryRelease(validationEnv({ SENTRY_REQUIRE_COMMITS: "false" }), fetchImpl);
-  assert.equal(result.release, "gittensory-rees@abc123");
+  assert.equal(result.release, "loopover-rees@abc123");
 });
 
 test("validateSentryRelease rejects a release missing the required deploy", async () => {
@@ -176,11 +176,11 @@ test("validateSentryRelease rejects a release missing the required deploy", asyn
     if (path.endsWith("/commits/")) return response([{ id: "abc123" }]);
     if (path.endsWith("/deploys/")) return response([]);
     return response({
-      version: "gittensory-rees@abc123",
+      version: "loopover-rees@abc123",
       dateReleased: "2026-06-29T00:00:00Z",
       commitCount: 1,
       deployCount: 0,
-      projects: [{ slug: "gittensory" }],
+      projects: [{ slug: "loopover" }],
     });
   };
 

@@ -122,7 +122,7 @@ test("boundedFetchStatus checks status without reading a response body", async (
 
 test("AnalysisContext fetchJson de-dupes identical in-flight calls and caps new category calls", async () => {
   const context = createAnalysisContext({
-    repoFullName: "JSONbored/gittensory",
+    repoFullName: "JSONbored/loopover",
     prNumber: 1812,
   });
   let calls = 0;

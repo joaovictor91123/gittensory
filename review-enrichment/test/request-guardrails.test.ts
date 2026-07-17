@@ -10,7 +10,7 @@ import {
 test("parseEnrichRequestBody accepts a minimal valid enrichment request", () => {
   const result = parseEnrichRequestBody(
     JSON.stringify({
-      repoFullName: "JSONbored/gittensory",
+      repoFullName: "JSONbored/loopover",
       prNumber: 1814,
       files: [{ path: "src/a.ts", patch: "@@ -1,0 +1,1 @@\n+export const a = 1;" }],
     }),
@@ -18,7 +18,7 @@ test("parseEnrichRequestBody accepts a minimal valid enrichment request", () => 
 
   assert.equal(result.ok, true);
   if (result.ok) {
-    assert.equal(result.payload.repoFullName, "JSONbored/gittensory");
+    assert.equal(result.payload.repoFullName, "JSONbored/loopover");
     assert.equal(result.payload.prNumber, 1814);
     assert.ok(result.bodyBytes > 0);
   }
@@ -51,7 +51,7 @@ test("parseEnrichRequestBody rejects oversized body, file list, diff, and patch 
 
   const tooManyFiles = parseEnrichRequestBody(
     JSON.stringify({
-      repoFullName: "JSONbored/gittensory",
+      repoFullName: "JSONbored/loopover",
       prNumber: 1814,
       files: Array.from({ length: 301 }, (_, index) => ({ path: `src/${index}.ts` })),
     }),
@@ -61,7 +61,7 @@ test("parseEnrichRequestBody rejects oversized body, file list, diff, and patch 
 
   const hugeDiff = parseEnrichRequestBody(
     JSON.stringify({
-      repoFullName: "JSONbored/gittensory",
+      repoFullName: "JSONbored/loopover",
       prNumber: 1814,
       diff: "x".repeat(1_000_001),
     }),
@@ -71,7 +71,7 @@ test("parseEnrichRequestBody rejects oversized body, file list, diff, and patch 
 
   const hugePatch = parseEnrichRequestBody(
     JSON.stringify({
-      repoFullName: "JSONbored/gittensory",
+      repoFullName: "JSONbored/loopover",
       prNumber: 1814,
       files: [{ path: "src/a.ts", patch: "x".repeat(1_500_001) }],
     }),
@@ -137,7 +137,7 @@ test("readEnrichRequestText stops streaming once the request body exceeds the ca
 });
 
 test("readEnrichRequestText returns a small request body", async () => {
-  const raw = JSON.stringify({ repoFullName: "JSONbored/gittensory", prNumber: 1836 });
+  const raw = JSON.stringify({ repoFullName: "JSONbored/loopover", prNumber: 1836 });
   const request = new Request("https://rees.example/v1/enrich", {
     method: "POST",
     body: raw,

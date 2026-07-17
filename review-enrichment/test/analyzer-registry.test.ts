@@ -88,7 +88,7 @@ test("analyzer descriptors cover the runtime registry in stable order", () => {
 test("buildBrief uses the descriptor-derived default registry", async () => {
   const syntheticGithubToken = ["ghp", "abcdefghijklmnopqrstuvwxyz1234567890"].join("_");
   const brief = await buildBrief({
-    repoFullName: "JSONbored/gittensory",
+    repoFullName: "JSONbored/loopover",
     prNumber: 1809,
     analyzers: ["secret"],
     files: [
@@ -115,7 +115,7 @@ test("secret analyzer scans added lines beyond shared context cap", async () => 
   ].join("\n");
 
   const brief = await buildBrief({
-    repoFullName: "JSONbored/gittensory",
+    repoFullName: "JSONbored/loopover",
     prNumber: 1809,
     analyzers: ["secret"],
     files: [

@@ -93,7 +93,7 @@ test("buildBrief reports partial analyzer results as degraded", async () => {
 
   const brief = await buildBrief(
     {
-      repoFullName: "JSONbored/gittensory",
+      repoFullName: "JSONbored/loopover",
       prNumber: 2037,
       analyzers: ["dependency"],
       files: [

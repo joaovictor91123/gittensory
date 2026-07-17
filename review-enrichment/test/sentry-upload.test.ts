@@ -16,7 +16,7 @@ test("resolveReesSentryRelease prefers explicit releases and falls back to Railw
     }),
     "custom-release",
   );
-  assert.equal(resolveReesSentryRelease({ RAILWAY_GIT_COMMIT_SHA: "abc123" }), "gittensory-rees@abc123");
+  assert.equal(resolveReesSentryRelease({ RAILWAY_GIT_COMMIT_SHA: "abc123" }), "loopover-rees@abc123");
   assert.equal(resolveReesSentryRelease({}), undefined);
 });
 
@@ -34,12 +34,12 @@ async function sentryApiServer(options: { missingCommitOnFirstValidation?: boole
   const server = createServer((req, res) => {
     seen.push(req.url ?? "");
     res.setHeader("content-type", "application/json");
-    if (req.url === "/api/0/organizations/jsonbored/releases/gittensory-rees%40abc123/") {
+    if (req.url === "/api/0/organizations/jsonbored/releases/loopover-rees%40abc123/") {
       releaseReads += 1;
       const missingCommit = options.missingCommitOnFirstValidation && releaseReads === 1;
       res.end(
         JSON.stringify({
-          version: "gittensory-rees@abc123",
+          version: "loopover-rees@abc123",
           dateReleased: "2026-06-29T00:00:00Z",
           commitCount: missingCommit ? 0 : 1,
           deployCount: 1,
@@ -49,7 +49,7 @@ async function sentryApiServer(options: { missingCommitOnFirstValidation?: boole
       );
       return;
     }
-    if (req.url === "/api/0/organizations/jsonbored/releases/gittensory-rees%40abc123/commits/") {
+    if (req.url === "/api/0/organizations/jsonbored/releases/loopover-rees%40abc123/commits/") {
       res.end(
         JSON.stringify(
           options.missingCommitOnFirstValidation && releaseReads === 1 ? [] : [{ id: "abc123" }],
@@ -57,7 +57,7 @@ async function sentryApiServer(options: { missingCommitOnFirstValidation?: boole
       );
       return;
     }
-    if (req.url === "/api/0/organizations/jsonbored/releases/gittensory-rees%40abc123/deploys/") {
+    if (req.url === "/api/0/organizations/jsonbored/releases/loopover-rees%40abc123/deploys/") {
       res.end(JSON.stringify([{ name: "deploy-1", environment: "production" }]));
       return;
     }
@@ -141,7 +141,7 @@ test("upload-sourcemaps calls Sentry CLI with release association on upload", as
       "--project",
       "rees",
       "new",
-      "gittensory-rees@abc123",
+      "loopover-rees@abc123",
     ]);
     assert.deepEqual(calls[1], [
       "releases",
@@ -150,7 +150,7 @@ test("upload-sourcemaps calls Sentry CLI with release association on upload", as
       "--project",
       "rees",
       "set-commits",
-      "gittensory-rees@abc123",
+      "loopover-rees@abc123",
       "--commit",
       "JSONbored/loopover@abc123",
       "--ignore-missing",
@@ -164,15 +164,15 @@ test("upload-sourcemaps calls Sentry CLI with release association on upload", as
       "rees",
       "upload",
       "--release",
-      "gittensory-rees@abc123",
+      "loopover-rees@abc123",
       "--validate",
       "--wait",
       "--strict",
       "dist",
     ]);
-    assert.equal(api.seen.includes("/api/0/organizations/jsonbored/releases/gittensory-rees%40abc123/"), true);
-    assert.equal(api.seen.includes("/api/0/organizations/jsonbored/releases/gittensory-rees%40abc123/commits/"), true);
-    assert.equal(api.seen.includes("/api/0/organizations/jsonbored/releases/gittensory-rees%40abc123/deploys/"), true);
+    assert.equal(api.seen.includes("/api/0/organizations/jsonbored/releases/loopover-rees%40abc123/"), true);
+    assert.equal(api.seen.includes("/api/0/organizations/jsonbored/releases/loopover-rees%40abc123/commits/"), true);
+    assert.equal(api.seen.includes("/api/0/organizations/jsonbored/releases/loopover-rees%40abc123/deploys/"), true);
   } finally {
     await api.close();
   }
@@ -200,7 +200,7 @@ test("upload-sourcemaps retries release validation until Sentry exposes associat
 
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
     assert.match(result.stderr, /rees_sentry_release_validation_retry/);
-    const commitPath = "/api/0/organizations/jsonbored/releases/gittensory-rees%40abc123/commits/";
+    const commitPath = "/api/0/organizations/jsonbored/releases/loopover-rees%40abc123/commits/";
     assert.equal(
       api.seen.filter((path) => path === commitPath).length,
       2,

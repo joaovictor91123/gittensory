@@ -47,7 +47,7 @@ export function resolveReesSentryRelease(env: NodeJS.ProcessEnv): string | undef
   return (
     nonBlank(env.SENTRY_RELEASE) ??
     (nonBlank(env.RAILWAY_GIT_COMMIT_SHA)
-      ? `gittensory-rees@${nonBlank(env.RAILWAY_GIT_COMMIT_SHA)}`
+      ? `loopover-rees@${nonBlank(env.RAILWAY_GIT_COMMIT_SHA)}`
       : undefined)
   );
 }

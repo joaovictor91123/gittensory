@@ -251,7 +251,7 @@ Set these Railway service variables:
 | `REES_SENTRY_UPLOAD_STRICT`    | Optional. Set `true` to fail startup if source-map upload fails.        |
 | `REES_SENTRY_VALIDATE_RELEASE` | Optional. Set `false` only to disable post-upload release validation.   |
 
-By default the release id is `gittensory-rees@<RAILWAY_GIT_COMMIT_SHA>`, using Railway's Git metadata. The Sentry
+By default the release id is `loopover-rees@<RAILWAY_GIT_COMMIT_SHA>`, using Railway's Git metadata. The Sentry
 GitHub code mapping should be:
 
 | Sentry field     | Value               |
@@ -264,7 +264,7 @@ Do **not** pass `SENTRY_AUTH_TOKEN` as a Docker build arg. Railway deploys this 
 can leak through image metadata. Keeping the upload at runtime means Sentry sees the same `dist/` files that the service
 executes, without exposing source maps over HTTP.
 
-After upload, startup validates the exact `gittensory-rees@<RAILWAY_GIT_COMMIT_SHA>` release through the Sentry API:
+After upload, startup validates the exact `loopover-rees@<RAILWAY_GIT_COMMIT_SHA>` release through the Sentry API:
 the release must exist, be finalized, include the deployed commit, and include the Railway deploy id/environment. If
 `REES_SENTRY_UPLOAD_STRICT=true`, a failed upload or failed validation stops the Railway deployment; otherwise it logs a
 `rees_sentry_sourcemap_upload_failed` warning so the problem is visible without blocking startup.
@@ -305,7 +305,7 @@ Useful production queries:
 
 If Sentry still shows frames such as `/app/dist/server.js`, check:
 
-1. The event's `release` is `gittensory-rees@<same Railway commit sha>` or your exact `SENTRY_RELEASE` override.
+1. The event's `release` is `loopover-rees@<same Railway commit sha>` or your exact `SENTRY_RELEASE` override.
 2. The Sentry release has an artifact bundle uploaded for the REES project.
 3. Railway has `SENTRY_AUTH_TOKEN`, `SENTRY_ORG`, and `SENTRY_PROJECT` set on the REES service.
 4. Startup logs include `sentry_release_validation_complete` for the same release id and Railway deployment id.

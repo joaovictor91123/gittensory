@@ -72,7 +72,7 @@ test("createAnalysisContext parses common PR state once", () => {
   const syntheticGithubToken = ["ghp", "abcdefghijklmnopqrstuvwxyz1234567890"].join("_");
   const context = createAnalysisContext(
     {
-      repoFullName: "JSONbored/gittensory",
+      repoFullName: "JSONbored/loopover",
       prNumber: 1810,
       headSha: "abcdef1234567890",
       files: [
@@ -100,8 +100,8 @@ test("createAnalysisContext parses common PR state once", () => {
 
   assert.deepEqual(context.repo, {
     owner: "JSONbored",
-    repo: "gittensory",
-    fullName: "JSONbored/gittensory",
+    repo: "loopover",
+    fullName: "JSONbored/loopover",
     prNumber: 1810,
     headSha: "abcdef1234567890",
   });
@@ -150,7 +150,7 @@ test("createAnalysisContext parses common PR state once", () => {
 
 test("request cache de-dupes in-flight external lookups and records safe metrics", async () => {
   const context = createAnalysisContext({
-    repoFullName: "JSONbored/gittensory",
+    repoFullName: "JSONbored/loopover",
     prNumber: 1810,
   });
   let loads = 0;
@@ -176,7 +176,7 @@ test("request cache de-dupes in-flight external lookups and records safe metrics
 
 test("request cache preserves category and key boundaries", async () => {
   const context = createAnalysisContext({
-    repoFullName: "JSONbored/gittensory",
+    repoFullName: "JSONbored/loopover",
     prNumber: 1810,
   });
   let loads = 0;
@@ -208,7 +208,7 @@ test("request cache preserves category and key boundaries", async () => {
 
 test("scanDependencyChanges batches and de-dupes OSV package lookups inside one request", async () => {
   const context = createAnalysisContext({
-    repoFullName: "JSONbored/gittensory",
+    repoFullName: "JSONbored/loopover",
     prNumber: 1810,
   });
   let fetchCalls = 0;
@@ -252,7 +252,7 @@ test("scanDependencyChanges batches and de-dupes OSV package lookups inside one 
 
 test("scanDependencyChanges chunks OSV batch lookups before fallback is needed", async () => {
   const context = createAnalysisContext({
-    repoFullName: "JSONbored/gittensory",
+    repoFullName: "JSONbored/loopover",
     prNumber: 1810,
   });
   const batchSizes = [];
@@ -298,7 +298,7 @@ test("scanDependencyChanges chunks OSV batch lookups before fallback is needed",
 
 test("queryOsvBatch honors maxDependencyQueries for direct callers", async () => {
   const context = createAnalysisContext({
-    repoFullName: "JSONbored/gittensory",
+    repoFullName: "JSONbored/loopover",
     prNumber: 1810,
   });
   const batchSizes = [];
@@ -334,7 +334,7 @@ test("queryOsvBatch honors maxDependencyQueries for direct callers", async () =>
 
 test("scanDependencyChanges falls back to direct OSV queries after an oversized batch response", async () => {
   const context = createAnalysisContext({
-    repoFullName: "JSONbored/gittensory",
+    repoFullName: "JSONbored/loopover",
     prNumber: 1810,
   });
   let batchCalls = 0;
@@ -393,7 +393,7 @@ test("scanDependencyChanges falls back to direct OSV queries after an oversized 
 
 test("createAnalysisContext leaves expensive diff surfaces lazy for skipped analyzers", () => {
   const context = createAnalysisContext({
-    repoFullName: "JSONbored/gittensory",
+    repoFullName: "JSONbored/loopover",
     prNumber: 1817,
     files: [
       {
@@ -416,7 +416,7 @@ test("createAnalysisContext caps materialized diff surfaces", () => {
     ...Array.from({ length: 6000 }, (_, index) => `+const value${index} = ${index};`),
   ].join("\n");
   const context = createAnalysisContext({
-    repoFullName: "JSONbored/gittensory",
+    repoFullName: "JSONbored/loopover",
     prNumber: 1817,
     files: [
       {
@@ -435,7 +435,7 @@ test("createAnalysisContext caps materialized diff surfaces", () => {
 
 test("createAnalysisContext keeps uncapped context-only patches as no added lines", () => {
   const context = createAnalysisContext({
-    repoFullName: "JSONbored/gittensory",
+    repoFullName: "JSONbored/loopover",
     prNumber: 1817,
     files: [
       {
@@ -451,7 +451,7 @@ test("createAnalysisContext keeps uncapped context-only patches as no added line
 
 test("createAnalysisContext treats capped patch scans as added-line presence", () => {
   const context = createAnalysisContext({
-    repoFullName: "JSONbored/gittensory",
+    repoFullName: "JSONbored/loopover",
     prNumber: 1817,
     files: [
       {
@@ -475,7 +475,7 @@ test("createAnalysisContext treats capped patch scans as added-line presence", (
 
 test("createAnalysisContext classifies workflow paths case-insensitively", () => {
   const context = createAnalysisContext({
-    repoFullName: "JSONbored/gittensory",
+    repoFullName: "JSONbored/loopover",
     prNumber: 2516,
     files: [
       {
@@ -500,7 +500,7 @@ test("createAnalysisContext classifies workflow paths case-insensitively", () =>
 
 test("createAnalysisContext classifies Zstandard archives as assets for scheduler gating", () => {
   const context = createAnalysisContext({
-    repoFullName: "JSONbored/gittensory",
+    repoFullName: "JSONbored/loopover",
     prNumber: 3128,
     headSha: "abcdef1234567890",
     githubToken: "github_pat_test",
@@ -529,7 +529,7 @@ test("createAnalysisContext classifies Zstandard archives as assets for schedule
 
   const plan = planAnalyzers(
     {
-      repoFullName: "JSONbored/gittensory",
+      repoFullName: "JSONbored/loopover",
       prNumber: 3128,
       headSha: "abcdef1234567890",
       githubToken: "github_pat_test",
@@ -547,7 +547,7 @@ test("createAnalysisContext classifies Zstandard archives as assets for schedule
 
 test("createAnalysisContext classifies ML model weights as assets for scheduler gating", () => {
   const context = createAnalysisContext({
-    repoFullName: "JSONbored/gittensory",
+    repoFullName: "JSONbored/loopover",
     prNumber: 3301,
     headSha: "abcdef1234567890",
     githubToken: "github_pat_test",
@@ -576,7 +576,7 @@ test("createAnalysisContext classifies ML model weights as assets for scheduler 
 
   const plan = planAnalyzers(
     {
-      repoFullName: "JSONbored/gittensory",
+      repoFullName: "JSONbored/loopover",
       prNumber: 3301,
       headSha: "abcdef1234567890",
       githubToken: "github_pat_test",
@@ -594,7 +594,7 @@ test("createAnalysisContext classifies ML model weights as assets for scheduler 
 
 test("createAnalysisContext classifies long-form doc extensions as docs", () => {
   const context = createAnalysisContext({
-    repoFullName: "JSONbored/gittensory",
+    repoFullName: "JSONbored/loopover",
     prNumber: 3264,
     files: [
       { path: "GUIDE.markdown", patch: "@@ -1,0 +1,1 @@\n+# guide" },
@@ -619,7 +619,7 @@ test("createAnalysisContext classifies long-form doc extensions as docs", () => 
 
 test("createAnalysisContext classifies lockfile paths case-insensitively", () => {
   const context = createAnalysisContext({
-    repoFullName: "JSONbored/gittensory",
+    repoFullName: "JSONbored/loopover",
     prNumber: 2611,
     files: [
       {
