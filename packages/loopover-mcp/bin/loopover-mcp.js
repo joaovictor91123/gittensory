@@ -2271,7 +2271,7 @@ server.registerResource(
 
 server.registerResource(
   "loopover_enrichment_analyzers",
-  "gittensory://enrichment-analyzers",
+  "loopover://enrichment-analyzers",
   {
     title: "LoopOver Enrichment Analyzers",
     description: "Static taxonomy of REES enrichment analyzers: names, categories, and cost classes.",
@@ -2284,7 +2284,7 @@ server.registerResource(
     } catch {
       data = { status: "unavailable" };
     }
-    return { contents: [{ uri: "gittensory://enrichment-analyzers", mimeType: "application/json", text: JSON.stringify(data, null, 2) }] };
+    return { contents: [{ uri: "loopover://enrichment-analyzers", mimeType: "application/json", text: JSON.stringify(data, null, 2) }] };
   },
 );
 
