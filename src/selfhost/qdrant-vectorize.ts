@@ -28,6 +28,10 @@ import type {
 
 const DEFAULT_COLLECTION = "loopover";
 const DEFAULT_DIM = 1024; // bge-m3 / mxbai-embed-large (1024-d); set QDRANT_DIM to override
+// Per-request ceiling for every Qdrant REST call (#7072). This is a self-host Node.js adapter with no
+// platform-level subrequest limit, so an unresponsive/partitioned Qdrant instance would otherwise hang these
+// calls indefinitely -- matching the bounded-fetch convention of the other self-host adapters (e.g. ai.ts).
+const QDRANT_FETCH_TIMEOUT_MS = 15_000;
 
 interface QdrantSearchResult {
   result: Array<{ id: string; score: number; payload: Record<string, unknown> }>;
@@ -73,12 +77,16 @@ export async function initQdrantCollection(
     method: "PUT",
     headers: qdrantHeaders(),
     body: JSON.stringify({ vectors: { size: dim, distance: "Cosine" } }),
+    signal: AbortSignal.timeout(QDRANT_FETCH_TIMEOUT_MS),
   });
   if (!res.ok && res.status !== 409) {
     throw new Error(`Qdrant collection init failed: HTTP ${res.status}`);
   }
   if (res.status === 409) {
-    const existing = await fetch(`${base}/collections/${collection}`, { headers: qdrantHeaders() });
+    const existing = await fetch(`${base}/collections/${collection}`, {
+      headers: qdrantHeaders(),
+      signal: AbortSignal.timeout(QDRANT_FETCH_TIMEOUT_MS),
+    });
     if (!existing.ok) throw new Error(`Qdrant collection lookup failed: HTTP ${existing.status}`);
     const info = (await existing.json()) as QdrantCollectionInfo;
     const existingDim = info.result.config.params.vectors.size;
@@ -103,6 +111,7 @@ export function createQdrantVectorize(url: string, collection = DEFAULT_COLLECTI
         method: "PUT",
         headers: qdrantHeaders(),
         body: JSON.stringify({ points }),
+        signal: AbortSignal.timeout(QDRANT_FETCH_TIMEOUT_MS),
       });
       if (!res.ok) {
         incr("loopover_qdrant_errors_total", { op: "upsert" });
@@ -123,6 +132,7 @@ export function createQdrantVectorize(url: string, collection = DEFAULT_COLLECTI
           method: "POST",
           headers: qdrantHeaders(),
           body: JSON.stringify(body),
+          signal: AbortSignal.timeout(QDRANT_FETCH_TIMEOUT_MS),
         });
       } catch {
         // Qdrant unreachable — degrade gracefully (RAG returns no context rather than crashing)
@@ -150,6 +160,7 @@ export function createQdrantVectorize(url: string, collection = DEFAULT_COLLECTI
         method: "POST",
         headers: qdrantHeaders(),
         body: JSON.stringify({ points }),
+        signal: AbortSignal.timeout(QDRANT_FETCH_TIMEOUT_MS),
       });
       if (!res.ok) {
         incr("loopover_qdrant_errors_total", { op: "delete" });

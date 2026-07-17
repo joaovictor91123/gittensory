@@ -302,3 +302,52 @@ describe("createQdrantVectorize (#1217 Qdrant adapter)", () => {
     expect(url).not.toContain("//collections");
   });
 });
+
+describe("Qdrant REST calls are bounded by an AbortSignal timeout (#7072)", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function assertEveryFetchTimed(fake: ReturnType<typeof mockFetch>) {
+    expect(fake.mock.calls.length).toBeGreaterThan(0);
+    for (const call of fake.mock.calls) {
+      const init = (call as unknown as [string, RequestInit | undefined])[1];
+      expect(init?.signal).toBeInstanceOf(AbortSignal);
+    }
+  }
+
+  it("bounds initQdrantCollection's PUT (fresh create) and its GET dimension-check (pre-existing collection)", async () => {
+    // Fresh create: the PUT returns 200 and no GET follows.
+    const created = mockFetch(200);
+    vi.stubGlobal("fetch", created);
+    await initQdrantCollection(BASE);
+    assertEveryFetchTimed(created);
+
+    // Pre-existing collection: the PUT 409s, so the GET dimension-check runs too -- both must be timed.
+    const existing = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("conflict", { status: 409 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(collectionInfo(1024)), { status: 200 }));
+    vi.stubGlobal("fetch", existing);
+    await initQdrantCollection(BASE);
+    assertEveryFetchTimed(existing as unknown as ReturnType<typeof mockFetch>);
+    expect(existing).toHaveBeenCalledTimes(2);
+  });
+
+  it("bounds upsert, query, and deleteByIds", async () => {
+    const upsertFake = mockFetch(200, { status: "ok" });
+    vi.stubGlobal("fetch", upsertFake);
+    await createQdrantVectorize(BASE).upsert([{ id: "r/f:1", values: [0.1, 0.2] }]);
+    assertEveryFetchTimed(upsertFake);
+
+    const queryFake = mockFetch(200, { result: [] });
+    vi.stubGlobal("fetch", queryFake);
+    await createQdrantVectorize(BASE).query([0.5, 0.5], { topK: 5 });
+    assertEveryFetchTimed(queryFake);
+
+    const deleteFake = mockFetch(200, { status: "ok" });
+    vi.stubGlobal("fetch", deleteFake);
+    await createQdrantVectorize(BASE).deleteByIds(["r/f:1"]);
+    assertEveryFetchTimed(deleteFake);
+  });
+});
