@@ -22,6 +22,7 @@
     "benchmark:miner": "node packages/loopover-miner/scripts/benchmark.mjs",
     "cross-repo-eval:miner": "node packages/loopover-miner/scripts/cross-repo-evaluation.mjs",
     "loadtest:iterate-loop": "npm run build --workspace @loopover/engine && node packages/loopover-engine/scripts/load-test-iterate-loop.mjs",
+    "loadtest:worker": "node scripts/load-test-worker.mjs",
     "command-reference": "node scripts/gen-command-reference.mjs",
     "command-reference:check": "node scripts/gen-command-reference.mjs --check",
     "selfhost:validate-observability": "node scripts/validate-observability-configs.mjs",
