@@ -10,6 +10,7 @@ import {
 const DEFAULT_ROLE_SUMMARY: Record<string, string> = {
   help: "maintainer, collaborator, confirmed_miner (default policy)",
   ask: "maintainer, collaborator, confirmed_miner",
+  chat: "maintainer, collaborator, pr_author (rate-limited; opt-in per repo)",
   preflight: "maintainer, collaborator, confirmed_miner",
   blockers: "maintainer, collaborator, confirmed_miner",
   "duplicate-check": "maintainer, collaborator, confirmed_miner",
@@ -34,6 +35,7 @@ const DEFAULT_ROLE_SUMMARY: Record<string, string> = {
   resolve: "maintainer, collaborator",
   configuration: "maintainer, collaborator",
   explain: "maintainer, collaborator",
+  "generate-tests": "maintainer",
 };
 
 export function CommandTable({
