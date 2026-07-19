@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import { Bar, BarChart, Cell, XAxis, YAxis } from "recharts";
 
 import { Button } from "@loopover/ui-kit/components/button";
@@ -403,25 +403,25 @@ export function PortfolioPage({
   requeueItem?: typeof requeuePortfolioQueueItem;
   pollIntervalMs?: number;
 }) {
-  const [refreshKey, setRefreshKey] = useState(0);
   const [actionPending, setActionPending] = useState(false);
   const [actionResult, setActionResult] = useState<PortfolioQueueActionResult | null>(null);
 
-  const loadSummary = useCallback(() => loadPortfolioQueue(), [loadPortfolioQueue, refreshKey]);
-  const summaryResult = usePolledFetch(loadSummary, pollIntervalMs);
+  const { result: summaryResult, refresh: refreshSummary } = usePolledFetch(loadPortfolioQueue, pollIntervalMs);
 
   // Poll the queue-actions items on the shared cadence too, independently of the summary card's own poll — a slow
-  // or failed fetch in one section must not block the other. Bumping refreshKey after the operator's own action
-  // re-fetches immediately, additive to the timer rather than replacing it (#7082).
-  const loadItems = useCallback(() => loadPortfolioQueueItems(), [loadPortfolioQueueItems, refreshKey]);
-  const itemsResult = usePolledFetch(loadItems, pollIntervalMs);
+  // or failed fetch in one section must not block the other.
+  const { result: itemsResult, refresh: refreshItems } = usePolledFetch(loadPortfolioQueueItems, pollIntervalMs);
 
   const runQueueAction = (action: () => Promise<PortfolioQueueActionResult>) => {
     setActionPending(true);
     void action().then((next) => {
       setActionResult(next);
       if (next.ok) {
-        setRefreshKey((key) => key + 1);
+        // Refresh both sections immediately so the operator's own action reflects at once — additive to each
+        // poll's timer, which keeps running on its original cadence rather than being reset by the action (#7230,
+        // restoring #7082's "additive... not a replacement" intent that the refreshKey-in-deps wiring broke).
+        refreshSummary();
+        refreshItems();
       }
       setActionPending(false);
     });

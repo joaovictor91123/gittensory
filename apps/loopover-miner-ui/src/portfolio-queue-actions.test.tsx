@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -296,6 +296,71 @@ describe("PortfolioPage queue actions (#4857)", () => {
       await vi.waitFor(() => expect(loadPortfolioQueueItems).toHaveBeenCalledTimes(1));
       await vi.advanceTimersByTimeAsync(1000);
       await vi.waitFor(() => expect(loadPortfolioQueueItems).toHaveBeenCalledTimes(2));
+    });
+  });
+
+  describe("additive live-refresh schedule (#7230)", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    // #7230 REGRESSION: an operator action must fetch immediately AND leave the periodic schedule undisturbed.
+    // Before the fix, bumping refreshKey gave loadSummary/loadItems a new identity, which tore down and restarted
+    // each poll's setInterval -- so the next scheduled tick landed pollIntervalMs after the ACTION (t=1600 below)
+    // instead of on the original cadence (t=1000). Both the summary and queue-actions polls must stay additive.
+    //
+    // Timing here is asserted with EXACT fake-timer advances plus manual microtask flushes -- never vi.waitFor,
+    // which auto-advances the fake clock and would blur the t=600-vs-t=1000 distinction this test turns on.
+    it("keeps both polls on their original interval after a release, rather than resetting to the action time", async () => {
+      vi.useFakeTimers();
+      // Drain the promise/effect microtask queue WITHOUT moving the fake clock, so time only advances where we say.
+      const flush = () =>
+        act(async () => {
+          await vi.advanceTimersByTimeAsync(0);
+        });
+      const loadSummary = vi.fn(async (): Promise<PortfolioQueueResult> => ({ ok: true, summary: fixtureSummary }));
+      const loadItems = vi.fn(async () => ({ ok: true as const, items: [inProgressItem] }));
+      const releaseItem = vi.fn(async () => ({
+        ok: true as const,
+        entry: { repoFullName: "acme/widgets", identifier: "issue:12", status: "queued" },
+      }));
+      render(
+        <PortfolioPage
+          loadPortfolioQueue={loadSummary}
+          loadPortfolioQueueItems={loadItems}
+          releaseItem={releaseItem}
+          pollIntervalMs={1000}
+        />,
+      );
+      // Mount fetch for both sections (t=0), flushed without advancing the clock.
+      await flush();
+      expect(loadSummary).toHaveBeenCalledTimes(1);
+      expect(loadItems).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole("button", { name: "Release" })).toBeTruthy();
+
+      // Advance exactly part-way through the interval, then act (t=600). No scheduled tick has fired yet.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(600);
+      });
+      expect(loadSummary).toHaveBeenCalledTimes(1);
+      expect(loadItems).toHaveBeenCalledTimes(1);
+
+      // Operator releases at t=600; the async action chain resolves via microtasks, not the clock.
+      fireEvent.click(screen.getByRole("button", { name: "Release" }));
+      await flush();
+      await flush();
+      expect(releaseItem).toHaveBeenCalledWith(inProgressItem);
+      // The action's own immediate extra fetch fires for both sections.
+      expect(loadSummary).toHaveBeenCalledTimes(2);
+      expect(loadItems).toHaveBeenCalledTimes(2);
+
+      // Advance ONLY the remaining 400ms to the ORIGINAL t=1000 tick. With the pre-fix reset, the next tick would
+      // be at t=1600 and both would still read 2; additive scheduling makes the original tick fire here (-> 3).
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(400);
+      });
+      expect(loadSummary).toHaveBeenCalledTimes(3);
+      expect(loadItems).toHaveBeenCalledTimes(3);
     });
   });
 });
