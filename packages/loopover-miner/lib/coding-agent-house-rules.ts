@@ -19,17 +19,41 @@
 // anticipated). `runHouseRulesEnforcedCodingAgentAttempt` itself remains real, tested, and callable, but has
 // no production caller today -- it's a lower-level composable for a hypothetical caller that wants the
 // non-iterate-loop path, not something this package currently needs.
+
 import { runCodingAgentAttempt } from "@loopover/engine";
+import type { AgentSdkHooks, CodingAgentDriverResult, CodingAgentExecutionMode, LintGuardResult, RunCodingAgentAttemptOptions } from "@loopover/engine";
 import { buildHouseRulesPreToolUseHook } from "./pretooluse-hook.js";
+import type { DenyRule } from "./deny-hooks.js";
+import type { appendGovernorEvent } from "./governor-ledger.js";
+
+export type HouseRulesConfig = {
+  rules?: readonly DenyRule[];
+  repoFullName?: string;
+};
+
+export type HouseRulesOptions = {
+  append?: typeof appendGovernorEvent;
+};
+
+/** The concrete shape {@link buildHouseRulesAgentSdkHooks} returns -- a single PreToolUse matcher group
+ *  holding the one house-rules callback. Structurally assignable to the engine's opaque `AgentSdkHooks`. */
+export type HouseRulesAgentSdkHooks = AgentSdkHooks & {
+  PreToolUse: Array<{ hooks: Array<(input: unknown, toolUseId?: string, context?: unknown) => Promise<Record<string, unknown>>> }>;
+};
+
 /**
  * Wrap {@link buildHouseRulesPreToolUseHook}'s callback into the Claude Agent SDK's own `hooks.PreToolUse`
  * registration shape (an array of matcher groups, each holding an array of hook callbacks) -- the exact
  * contract `agent-sdk-driver.ts`'s own doc comment names as "#2343's stated attachment point", and the shape
  * `packages/loopover-engine/test/agent-sdk-driver.test.ts` asserts is forwarded to the SDK verbatim.
  */
-export function buildHouseRulesAgentSdkHooks(config = {}, options = {}) {
-    return { PreToolUse: [{ hooks: [buildHouseRulesPreToolUseHook(config, options)] }] };
+export function buildHouseRulesAgentSdkHooks(
+  config: HouseRulesConfig = {},
+  options: HouseRulesOptions = {},
+): HouseRulesAgentSdkHooks {
+  return { PreToolUse: [{ hooks: [buildHouseRulesPreToolUseHook(config, options)] }] } as HouseRulesAgentSdkHooks;
 }
+
 /**
  * Drop-in replacement for the engine's `runCodingAgentAttempt` that defaults `hooks` to
  * {@link buildHouseRulesAgentSdkHooks} for the `agent-sdk` provider, so house-rule enforcement (#2343) is ON
@@ -40,12 +64,14 @@ export function buildHouseRulesAgentSdkHooks(config = {}, options = {}) {
  * only; a CLI attempt with no explicit `hooks` gets none (today's inert no-op), while one that explicitly
  * supplies `hooks` still gets the engine's real fail-closed rejection instead of a silently unenforced run.
  */
-export function runHouseRulesEnforcedCodingAgentAttempt(options) {
-    const { houseRulesConfig, houseRulesOptions, ...attemptOptions } = options;
-    const hooks = attemptOptions.hooks ??
-        (attemptOptions.providerName.trim().toLowerCase() === "agent-sdk"
-            ? buildHouseRulesAgentSdkHooks(houseRulesConfig, houseRulesOptions)
-            : undefined);
-    return runCodingAgentAttempt({ ...attemptOptions, ...(hooks !== undefined ? { hooks } : {}) });
+export function runHouseRulesEnforcedCodingAgentAttempt(
+  options: RunCodingAgentAttemptOptions & { houseRulesConfig?: HouseRulesConfig; houseRulesOptions?: HouseRulesOptions },
+): Promise<{ mode: CodingAgentExecutionMode; result: CodingAgentDriverResult & { lintGuard?: LintGuardResult } }> {
+  const { houseRulesConfig, houseRulesOptions, ...attemptOptions } = options;
+  const hooks =
+    attemptOptions.hooks ??
+    (attemptOptions.providerName.trim().toLowerCase() === "agent-sdk"
+      ? buildHouseRulesAgentSdkHooks(houseRulesConfig, houseRulesOptions)
+      : undefined);
+  return runCodingAgentAttempt({ ...attemptOptions, ...(hooks !== undefined ? { hooks } : {}) });
 }
-//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoiY29kaW5nLWFnZW50LWhvdXNlLXJ1bGVzLmpzIiwic291cmNlUm9vdCI6IiIsInNvdXJjZXMiOlsiY29kaW5nLWFnZW50LWhvdXNlLXJ1bGVzLnRzIl0sIm5hbWVzIjpbXSwibWFwcGluZ3MiOiJBQUFBLGtHQUFrRztBQUNsRywyRkFBMkY7QUFDM0YsdUdBQXVHO0FBQ3ZHLCtGQUErRjtBQUMvRix5R0FBeUc7QUFDekcsNkdBQTZHO0FBQzdHLCtGQUErRjtBQUMvRiwrR0FBK0c7QUFDL0csRUFBRTtBQUNGLHdHQUF3RztBQUN4RywwR0FBMEc7QUFDMUcsNEdBQTRHO0FBQzVHLDJGQUEyRjtBQUMzRiw4R0FBOEc7QUFDOUcsMkdBQTJHO0FBQzNHLHNGQUFzRjtBQUN0RixzR0FBc0c7QUFDdEcsMEdBQTBHO0FBQzFHLDZHQUE2RztBQUM3Ryx1R0FBdUc7QUFDdkcscUVBQXFFO0FBRXJFLE9BQU8sRUFBRSxxQkFBcUIsRUFBRSxNQUFNLGtCQUFrQixDQUFDO0FBRXpELE9BQU8sRUFBRSw2QkFBNkIsRUFBRSxNQUFNLHNCQUFzQixDQUFDO0FBbUJyRTs7Ozs7R0FLRztBQUNILE1BQU0sVUFBVSw0QkFBNEIsQ0FDMUMsU0FBMkIsRUFBRSxFQUM3QixVQUE2QixFQUFFO0lBRS9CLE9BQU8sRUFBRSxVQUFVLEVBQUUsQ0FBQyxFQUFFLEtBQUssRUFBRSxDQUFDLDZCQUE2QixDQUFDLE1BQU0sRUFBRSxPQUFPLENBQUMsQ0FBQyxFQUFFLENBQUMsRUFBNkIsQ0FBQztBQUNsSCxDQUFDO0FBRUQ7Ozs7Ozs7OztHQVNHO0FBQ0gsTUFBTSxVQUFVLHVDQUF1QyxDQUNyRCxPQUFzSDtJQUV0SCxNQUFNLEVBQUUsZ0JBQWdCLEVBQUUsaUJBQWlCLEVBQUUsR0FBRyxjQUFjLEVBQUUsR0FBRyxPQUFPLENBQUM7SUFDM0UsTUFBTSxLQUFLLEdBQ1QsY0FBYyxDQUFDLEtBQUs7UUFDcEIsQ0FBQyxjQUFjLENBQUMsWUFBWSxDQUFDLElBQUksRUFBRSxDQUFDLFdBQVcsRUFBRSxLQUFLLFdBQVc7WUFDL0QsQ0FBQyxDQUFDLDRCQUE0QixDQUFDLGdCQUFnQixFQUFFLGlCQUFpQixDQUFDO1lBQ25FLENBQUMsQ0FBQyxTQUFTLENBQUMsQ0FBQztJQUNqQixPQUFPLHFCQUFxQixDQUFDLEVBQUUsR0FBRyxjQUFjLEVBQUUsR0FBRyxDQUFDLEtBQUssS0FBSyxTQUFTLENBQUMsQ0FBQyxDQUFDLEVBQUUsS0FBSyxFQUFFLENBQUMsQ0FBQyxDQUFDLEVBQUUsQ0FBQyxFQUFFLENBQUMsQ0FBQztBQUNqRyxDQUFDIn0=

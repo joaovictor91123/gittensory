@@ -12,55 +12,50 @@
 // OPEN type vocabulary (only the phase writers define concrete types), so events are tallied GENERICALLY by `type`;
 // new phase event types (plans built, PRs prepared/opened, outcomes recorded — landing via sibling issues) surface
 // in the tally automatically without a hardcoded list here.
-
 /**
  * Build a read-only loop-closure summary from local-state sources. Pure: reads `sources` + `options` and returns a
  * structured summary, mutating nothing.
- *
- * @param {{ eventLedger: { readEvents: Function }, portfolioQueue: { listQueue: Function }, runState?: { getRunState: Function } }} sources
- * @param {{ sinceSeq?: number, repoFullName?: string }} [options]
- * @returns {{ sinceSeq: number|null, lastSeq: number, events: { total: number, byType: Record<string, number> }, queue: { total: number, byStatus: Record<string, number> }, runState: string|null }}
  */
 export function buildLoopClosureSummary(sources, options = {}) {
-  const eventLedger = sources?.eventLedger;
-  const portfolioQueue = sources?.portfolioQueue;
-  const runState = sources?.runState;
-  if (!eventLedger || typeof eventLedger.readEvents !== "function") throw new Error("invalid_event_ledger");
-  if (!portfolioQueue || typeof portfolioQueue.listQueue !== "function") throw new Error("invalid_portfolio_queue");
-
-  const repoFullName = typeof options.repoFullName === "string" && options.repoFullName.length > 0 ? options.repoFullName : null;
-  const sinceSeq = Number.isInteger(options.sinceSeq) && options.sinceSeq >= 0 ? options.sinceSeq : null;
-
-  // Bound "this cycle" to events after the prior cycle's ending seq; event-ledger applies the `since`/repo filter.
-  const filter = {};
-  if (repoFullName !== null) filter.repoFullName = repoFullName;
-  if (sinceSeq !== null) filter.since = sinceSeq;
-  const events = eventLedger.readEvents(filter);
-
-  const byType = {};
-  let lastSeq = sinceSeq ?? 0;
-  for (const event of events) {
-    const type = typeof event?.type === "string" && event.type.length > 0 ? event.type : "unknown";
-    byType[type] = (byType[type] ?? 0) + 1;
-    if (Number.isInteger(event?.seq) && event.seq > lastSeq) lastSeq = event.seq;
-  }
-
-  const byStatus = {};
-  const queueEntries = portfolioQueue.listQueue(repoFullName);
-  for (const entry of queueEntries) {
-    const status = typeof entry?.status === "string" && entry.status.length > 0 ? entry.status : "unknown";
-    byStatus[status] = (byStatus[status] ?? 0) + 1;
-  }
-
-  const currentRunState = runState && typeof runState.getRunState === "function" && repoFullName !== null
-    ? runState.getRunState(repoFullName)
-    : null;
-
-  return {
-    sinceSeq,
-    lastSeq,
-    events: { total: events.length, byType },
-    queue: { total: queueEntries.length, byStatus },
-    runState: currentRunState ?? null,
-  };
+    const eventLedger = sources?.eventLedger;
+    const portfolioQueue = sources?.portfolioQueue;
+    const runState = sources?.runState;
+    if (!eventLedger || typeof eventLedger.readEvents !== "function")
+        throw new Error("invalid_event_ledger");
+    if (!portfolioQueue || typeof portfolioQueue.listQueue !== "function")
+        throw new Error("invalid_portfolio_queue");
+    const repoFullName = typeof options.repoFullName === "string" && options.repoFullName.length > 0 ? options.repoFullName : null;
+    const sinceSeq = Number.isInteger(options.sinceSeq) && options.sinceSeq >= 0 ? options.sinceSeq : null;
+    // Bound "this cycle" to events after the prior cycle's ending seq; event-ledger applies the `since`/repo filter.
+    const filter = {};
+    if (repoFullName !== null)
+        filter.repoFullName = repoFullName;
+    if (sinceSeq !== null)
+        filter.since = sinceSeq;
+    const events = eventLedger.readEvents(filter);
+    const byType = {};
+    let lastSeq = sinceSeq ?? 0;
+    for (const event of events) {
+        const type = typeof event?.type === "string" && event.type.length > 0 ? event.type : "unknown";
+        byType[type] = (byType[type] ?? 0) + 1;
+        if (Number.isInteger(event?.seq) && event.seq > lastSeq)
+            lastSeq = event.seq;
+    }
+    const byStatus = {};
+    const queueEntries = portfolioQueue.listQueue(repoFullName);
+    for (const entry of queueEntries) {
+        const status = typeof entry?.status === "string" && entry.status.length > 0 ? entry.status : "unknown";
+        byStatus[status] = (byStatus[status] ?? 0) + 1;
+    }
+    const currentRunState = runState && typeof runState.getRunState === "function" && repoFullName !== null
+        ? runState.getRunState(repoFullName)
+        : null;
+    return {
+        sinceSeq,
+        lastSeq,
+        events: { total: events.length, byType },
+        queue: { total: queueEntries.length, byStatus },
+        runState: currentRunState ?? null,
+    };
 }
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJmaWxlIjoibG9vcC1jbG9zdXJlLmpzIiwic291cmNlUm9vdCI6IiIsInNvdXJjZXMiOlsibG9vcC1jbG9zdXJlLnRzIl0sIm5hbWVzIjpbXSwibWFwcGluZ3MiOiJBQUFBLHFHQUFxRztBQUNyRyxFQUFFO0FBQ0Ysb0hBQW9IO0FBQ3BILG1HQUFtRztBQUNuRyxnSEFBZ0g7QUFDaEgsaUhBQWlIO0FBQ2pILHFGQUFxRjtBQUNyRixFQUFFO0FBQ0YscUhBQXFIO0FBQ3JILGlIQUFpSDtBQUNqSCxtSEFBbUg7QUFDbkgsb0hBQW9IO0FBQ3BILG1IQUFtSDtBQUNuSCw0REFBNEQ7QUF1QzVEOzs7R0FHRztBQUNILE1BQU0sVUFBVSx1QkFBdUIsQ0FDckMsT0FBMkIsRUFDM0IsVUFBOEIsRUFBRTtJQUVoQyxNQUFNLFdBQVcsR0FBRyxPQUFPLEVBQUUsV0FBVyxDQUFDO0lBQ3pDLE1BQU0sY0FBYyxHQUFHLE9BQU8sRUFBRSxjQUFjLENBQUM7SUFDL0MsTUFBTSxRQUFRLEdBQUcsT0FBTyxFQUFFLFFBQVEsQ0FBQztJQUNuQyxJQUFJLENBQUMsV0FBVyxJQUFJLE9BQU8sV0FBVyxDQUFDLFVBQVUsS0FBSyxVQUFVO1FBQUUsTUFBTSxJQUFJLEtBQUssQ0FBQyxzQkFBc0IsQ0FBQyxDQUFDO0lBQzFHLElBQUksQ0FBQyxjQUFjLElBQUksT0FBTyxjQUFjLENBQUMsU0FBUyxLQUFLLFVBQVU7UUFBRSxNQUFNLElBQUksS0FBSyxDQUFDLHlCQUF5QixDQUFDLENBQUM7SUFFbEgsTUFBTSxZQUFZLEdBQUcsT0FBTyxPQUFPLENBQUMsWUFBWSxLQUFLLFFBQVEsSUFBSSxPQUFPLENBQUMsWUFBWSxDQUFDLE1BQU0sR0FBRyxDQUFDLENBQUMsQ0FBQyxDQUFDLE9BQU8sQ0FBQyxZQUFZLENBQUMsQ0FBQyxDQUFDLElBQUksQ0FBQztJQUMvSCxNQUFNLFFBQVEsR0FBRyxNQUFNLENBQUMsU0FBUyxDQUFDLE9BQU8sQ0FBQyxRQUFRLENBQUMsSUFBSyxPQUFPLENBQUMsUUFBbUIsSUFBSSxDQUFDLENBQUMsQ0FBQyxDQUFFLE9BQU8sQ0FBQyxRQUFtQixDQUFDLENBQUMsQ0FBQyxJQUFJLENBQUM7SUFFL0gsaUhBQWlIO0lBQ2pILE1BQU0sTUFBTSxHQUE4QyxFQUFFLENBQUM7SUFDN0QsSUFBSSxZQUFZLEtBQUssSUFBSTtRQUFFLE1BQU0sQ0FBQyxZQUFZLEdBQUcsWUFBWSxDQUFDO0lBQzlELElBQUksUUFBUSxLQUFLLElBQUk7UUFBRSxNQUFNLENBQUMsS0FBSyxHQUFHLFFBQVEsQ0FBQztJQUMvQyxNQUFNLE1BQU0sR0FBRyxXQUFXLENBQUMsVUFBVSxDQUFDLE1BQU0sQ0FBQyxDQUFDO0lBRTlDLE1BQU0sTUFBTSxHQUEyQixFQUFFLENBQUM7SUFDMUMsSUFBSSxPQUFPLEdBQUcsUUFBUSxJQUFJLENBQUMsQ0FBQztJQUM1QixLQUFLLE1BQU0sS0FBSyxJQUFJLE1BQU0sRUFBRSxDQUFDO1FBQzNCLE1BQU0sSUFBSSxHQUFHLE9BQU8sS0FBSyxFQUFFLElBQUksS0FBSyxRQUFRLElBQUksS0FBSyxDQUFDLElBQUksQ0FBQyxNQUFNLEdBQUcsQ0FBQyxDQUFDLENBQUMsQ0FBQyxLQUFLLENBQUMsSUFBSSxDQUFDLENBQUMsQ0FBQyxTQUFTLENBQUM7UUFDL0YsTUFBTSxDQUFDLElBQUksQ0FBQyxHQUFHLENBQUMsTUFBTSxDQUFDLElBQUksQ0FBQyxJQUFJLENBQUMsQ0FBQyxHQUFHLENBQUMsQ0FBQztRQUN2QyxJQUFJLE1BQU0sQ0FBQyxTQUFTLENBQUMsS0FBSyxFQUFFLEdBQUcsQ0FBQyxJQUFLLEtBQUssQ0FBQyxHQUFjLEdBQUcsT0FBTztZQUFFLE9BQU8sR0FBRyxLQUFLLENBQUMsR0FBYSxDQUFDO0lBQ3JHLENBQUM7SUFFRCxNQUFNLFFBQVEsR0FBMkIsRUFBRSxDQUFDO0lBQzVDLE1BQU0sWUFBWSxHQUFHLGNBQWMsQ0FBQyxTQUFTLENBQUMsWUFBWSxDQUFDLENBQUM7SUFDNUQsS0FBSyxNQUFNLEtBQUssSUFBSSxZQUFZLEVBQUUsQ0FBQztRQUNqQyxNQUFNLE1BQU0sR0FBRyxPQUFPLEtBQUssRUFBRSxNQUFNLEtBQUssUUFBUSxJQUFJLEtBQUssQ0FBQyxNQUFNLENBQUMsTUFBTSxHQUFHLENBQUMsQ0FBQyxDQUFDLENBQUMsS0FBSyxDQUFDLE1BQU0sQ0FBQyxDQUFDLENBQUMsU0FBUyxDQUFDO1FBQ3ZHLFFBQVEsQ0FBQyxNQUFNLENBQUMsR0FBRyxDQUFDLFFBQVEsQ0FBQyxNQUFNLENBQUMsSUFBSSxDQUFDLENBQUMsR0FBRyxDQUFDLENBQUM7SUFDakQsQ0FBQztJQUVELE1BQU0sZUFBZSxHQUFHLFFBQVEsSUFBSSxPQUFPLFFBQVEsQ0FBQyxXQUFXLEtBQUssVUFBVSxJQUFJLFlBQVksS0FBSyxJQUFJO1FBQ3JHLENBQUMsQ0FBQyxRQUFRLENBQUMsV0FBVyxDQUFDLFlBQVksQ0FBQztRQUNwQyxDQUFDLENBQUMsSUFBSSxDQUFDO0lBRVQsT0FBTztRQUNMLFFBQVE7UUFDUixPQUFPO1FBQ1AsTUFBTSxFQUFFLEVBQUUsS0FBSyxFQUFFLE1BQU0sQ0FBQyxNQUFNLEVBQUUsTUFBTSxFQUFFO1FBQ3hDLEtBQUssRUFBRSxFQUFFLEtBQUssRUFBRSxZQUFZLENBQUMsTUFBTSxFQUFFLFFBQVEsRUFBRTtRQUMvQyxRQUFRLEVBQUUsZUFBZSxJQUFJLElBQUk7S0FDbEMsQ0FBQztBQUNKLENBQUMifQ==
