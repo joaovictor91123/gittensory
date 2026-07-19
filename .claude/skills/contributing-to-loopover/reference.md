@@ -14,12 +14,14 @@ for maintainer approval (CI shows unverified → the engine **holds**, never clo
 
 ## 1. Every CI check → local command → what fails it
 
-The single **required** status check is **`validate`** (it aggregates `changes, lint, test, workers,
-mcp, ui, security`; a path-skipped job counts as success). **Codecov** posts `codecov/patch` (the real
-coverage gate) and `codecov/project` (informational) independently. The review engine also posts its
-own check run named **`LoopOver Orb Review Agent`** (`src/github/app.ts` `LOOPOVER_GATE_CHECK_NAME`) — the gate
-verdict (§3), separate from CI. On a PR, jobs run only if their
-path filter matched; on push to `main`, everything runs.
+The **required** status checks on `main` are **`validate`** (it aggregates `changes, lint, test,
+workers, mcp, ui, security`; a path-skipped job counts as success) and **`Superagent Security Scan`**
+(a separate third-party GitHub App check, not part of this repo's own workflow files — confirmed via
+`gh api repos/JSONbored/loopover/branches/main/protection/required_status_checks`). **Codecov** posts
+`codecov/patch` (the real coverage gate) and `codecov/project` (informational) independently. The
+review engine also posts its own check run named **`LoopOver Orb Review Agent`**
+(`src/github/app.ts` `LOOPOVER_GATE_CHECK_NAME`) — the gate verdict (§3), separate from CI. On a PR,
+jobs run only if their path filter matched; on push to `main`, everything runs.
 
 | Check | Runs | Local command | Fails when |
 |---|---|---|---|
@@ -32,7 +34,7 @@ path filter matched; on push to `main`, everything runs.
 | lint → miner-env-reference | miner/AMS env-var doc drift | `npm run miner:env-reference:check` | committed `packages/loopover-miner/docs/env-reference.md` / `apps/loopover-ui/src/lib/ams-env-reference.ts` is stale (run `npm run miner:env-reference`) — miner/AMS twin of the selfhost check above |
 | lint → observability | Grafana/Prometheus/alert config validation | `npm run selfhost:validate-observability` | a self-host observability config (dashboard/rule/datasource) is malformed |
 | lint → typecheck | `tsc --noEmit` | `npm run typecheck` | any backend type error |
-| test (1/2) | sharded vitest + coverage | `npm run test:coverage` (unsharded) | any failing `test/**/*.test.ts` (excl. `test/workers/**`) |
+| test (1/6..6/6) | sharded vitest + coverage | `npm run test:coverage` (unsharded) | any failing `test/**/*.test.ts` (excl. `test/workers/**`) |
 | workers | workers-pool vitest | `npm run test:workers` | any failing `test/workers/**` |
 | mcp → build | MCP pkg build | `npm run build:mcp` | MCP package build error |
 | mcp → pack | tarball hygiene | `npm run test:mcp-pack` | unexpected/forbidden file or stale README in the npm tarball |
@@ -71,7 +73,7 @@ these for a normal PR:**
 
 | Local command | Why it's not in the table above |
 |---|---|
-| `npm run test:engine-parity`, `npm run test:live-gate-parity`, `npm run test:driver-parity` | Plain `test/contract/*.test.ts` files — no dedicated CI job, but they DO run in CI as part of whichever `test (1/2)` shard happens to contain them (sharded `vitest run`). |
+| `npm run test:engine-parity`, `npm run test:live-gate-parity`, `npm run test:driver-parity` | Plain `test/contract/*.test.ts` files — no dedicated CI job, but they DO run in CI as part of whichever `test (1/6..6/6)` shard happens to contain them (sharded `vitest run`). |
 | `npm run test --workspace @loopover/engine` | The engine package's own `node --test` suite. **Not run by `ci.yml` on a PR at all** — only by `.github/workflows/publish-engine.yml` at release time. A regression here is invisible to Codecov and to every PR-gating CI check; `test:ci` locally is the only pre-merge signal. |
 
 This is a real, previously-hit gap, not a hypothetical: a past PR shipped a genuine, undetected
@@ -92,8 +94,11 @@ checks go green) is the only way to know you didn't break it.
 - **Ignored paths** (no coverage obligation): `apps/**`, `test/**`, `scripts/**`, `src/env.d.ts`.
   Coverage `include` is `src/**/*.ts` only. → A UI-only / test-only / script-only change owes **no**
   patch coverage; a backend `src/**` change owes coverage on **every changed line + branch**.
-- **Measure unsharded locally:** `npm run test:coverage`. CI shards into 2 and Codecov merges them,
+- **Measure unsharded locally:** `npm run test:coverage`. CI shards into 6 and Codecov merges them,
   so a single local shard under-reports — never trust it.
+- **Flaky tests are already tracked.** Every shard uploads a JUnit report (`report_type: test_results`),
+  which auto-enables Codecov Test Analytics with no extra config — check a PR's "Tests" tab or its
+  Codecov bot comment if a test needed a retry, rather than assuming it's pure infra noise.
 
 ---
 

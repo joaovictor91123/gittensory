@@ -1,0 +1,85 @@
+name: Setup workspace
+description: >-
+  Strip untrusted npm config, set up Node, and restore/install/save the fork/trusted-scoped
+  node_modules cache. Extracted from ci.yml's validate-code, validate-tests, and validate-tests-merge
+  jobs, which had this exact sequence copy-pasted three times -- the same kind of drift that caused a
+  real cache-key mismatch bug this repo already hit once (two jobs' Turborepo cache pair silently
+  diverged when one was edited and the other wasn't). This doesn't fix that specific bug on its own,
+  but a future change to this sequence now only needs to happen here, not be remembered at every call
+  site. Does NOT check out the repo itself -- a local `uses: ./path` action reference needs the repo
+  already on disk to even find this file, so actions/checkout must run in the calling job BEFORE this
+  action is invoked, not inside it.
+
+inputs:
+  save-cache:
+    description: >-
+      Whether to save the node_modules cache after a successful install. validate-tests-merge sets
+      this to "false" -- it only ever reads the cache validate-code/validate-tests already populate,
+      never writes to it, so a save here would just be redundant work.
+    required: false
+    default: "true"
+
+outputs:
+  cache-hit:
+    description: Whether the node_modules cache was restored (passed through from actions/cache/restore).
+    value: ${{ steps.node-modules-cache.outputs.cache-hit }}
+
+runs:
+  using: composite
+  steps:
+    - name: Neutralize untrusted npm config
+      shell: bash
+      run: rm -f .npmrc
+
+    - name: Setup Node
+      uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+      with:
+        node-version-file: .nvmrc
+        cache: npm
+
+    # actions/checkout wipes node_modules (git clean -ffdx) on every run regardless of the self-hosted
+    # runner's own persistence, and npm ci always deletes+reinstalls node_modules by design -- so
+    # neither the runner nor npm ci gives node_modules any real cross-run reuse on its own. This
+    # explicit restore/save pair (via GitHub's own cache service, not local disk) fills that gap: an
+    # exact manifest+lockfile match skips npm ci entirely. Keep fork/trusted keys separate even though
+    # both run on ubuntu-latest: fork PRs get read-only cache tokens, so a fork-keyed entry can never
+    # actually be written; trusted PRs keep their reusable cache without crossing trust boundaries.
+    - name: Restore node_modules cache
+      id: node-modules-cache
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          node_modules
+          apps/loopover-ui/node_modules
+        # hashFiles('.nvmrc') matters as much as the package manifests and lockfile: a Node bump
+        # with no lockfile change would otherwise still hit and silently reuse node_modules whose
+        # native addons (sharp, workerd, fsevents) were compiled against the OLD Node's ABI. The
+        # manifests matter too because npm ci validates package.json/package-lock.json consistency
+        # and runs lifecycle scripts from package.json; a package.json-only change must not skip it.
+        key: npm-${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == true) && 'fork' || 'trusted' }}-${{ hashFiles('.nvmrc') }}-${{ hashFiles('package.json', 'apps/*/package.json', 'packages/*/package.json', 'package-lock.json') }}
+
+    - name: Install dependencies (retry on transient failures)
+      if: ${{ steps.node-modules-cache.outputs.cache-hit != 'true' }}
+      shell: bash
+      run: |
+        for attempt in 1 2 3; do
+          if npm ci --prefer-offline --no-audit --no-fund; then
+            exit 0
+          fi
+          echo "::warning::npm ci failed (attempt ${attempt}/3); retrying in 10s"
+          sleep 10
+        done
+        echo "::error::npm ci failed after 3 attempts"
+        exit 1
+
+    # Placed immediately after install (not as an automatic post-job hook) so a cache is only ever
+    # saved once npm ci has actually succeeded -- a job that fails here never reaches this step, so a
+    # broken/partial node_modules can never get written to the cache for a future run to inherit.
+    - name: Save node_modules cache
+      if: ${{ inputs.save-cache == 'true' && steps.node-modules-cache.outputs.cache-hit != 'true' }}
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          node_modules
+          apps/loopover-ui/node_modules
+        key: ${{ steps.node-modules-cache.outputs.cache-primary-key }}

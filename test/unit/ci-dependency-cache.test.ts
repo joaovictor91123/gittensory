@@ -29,45 +29,13 @@ function jobSteps(workflow: Record<string, unknown>, jobName: string): Array<Rec
   return recordArray(job.steps, `${jobName}.steps`);
 }
 
-// actions/checkout wipes node_modules on every run (git clean -ffdx) and npm ci always deletes+reinstalls
-// it by design, so neither gives node_modules any real cross-run reuse -- these restore/save pairs (via
-// GitHub's own cache service) fill that gap: an exact manifest+lockfile match skips the install step
-// entirely. Cache-save is placed right after a successful install (not as an automatic post-job hook), so
-// a job that fails installing never reaches the save step -- a broken node_modules can never get cached.
+// The root node_modules restore/install/save sequence used to be asserted here directly against
+// validate-code's own step list, but it's now a shared composite action
+// (.github/actions/setup-workspace) invoked by validate-code/validate-tests/validate-tests-merge alike
+// -- see ci-composite-setup-workspace.test.ts for that logic and its call sites. review-enrichment's
+// cache is untouched by that extraction (own lockfile, not an npm workspace member, no reason to share
+// the same composite action), so it's still checked here directly.
 describe("CI dependency-install caching", () => {
-  it("root npm ci is skipped only on an exact node_modules cache hit, and the cache is saved only after a successful install", () => {
-    const steps = jobSteps(readYaml(".github/workflows/ci.yml"), "validate-code");
-
-    const restore = step(steps, "Restore node_modules cache");
-    expect(restore.uses).toContain("actions/cache/restore@");
-    const restoreWith = record(restore.with, "restore.with");
-    expect(String(restoreWith.path)).toContain("node_modules");
-    expect(String(restoreWith.path)).toContain("apps/loopover-ui/node_modules");
-    expect(String(restoreWith.key)).toContain("hashFiles('package.json', 'apps/*/package.json', 'packages/*/package.json', 'package-lock.json')");
-    expect(String(restoreWith.key)).toContain("package.json");
-    expect(String(restoreWith.key)).toContain("apps/*/package.json");
-    expect(String(restoreWith.key)).toContain("packages/*/package.json");
-    expect(String(restoreWith.key)).toContain("package-lock.json");
-    // A Node bump (.nvmrc) with no lockfile change must still bust the cache -- otherwise a hit would
-    // silently reuse node_modules whose native addons were compiled against the OLD Node's ABI.
-    expect(String(restoreWith.key)).toContain("hashFiles('.nvmrc')");
-    expect(String(restoreWith.key)).toContain("fork");
-    expect(String(restoreWith.key)).toContain("trusted");
-
-    const install = step(steps, "Install dependencies (retry on transient failures)");
-    expect(String(install.if)).toContain("steps.node-modules-cache.outputs.cache-hit != 'true'");
-
-    const save = step(steps, "Save node_modules cache");
-    expect(String(save.if)).toContain("steps.node-modules-cache.outputs.cache-hit != 'true'");
-    expect(save.uses).toContain("actions/cache/save@");
-    const saveWith = record(save.with, "save.with");
-    expect(saveWith.key).toBe("${{ steps.node-modules-cache.outputs.cache-primary-key }}");
-
-    // Save must come after install (a broken/partial node_modules from a failed install step is never reached).
-    const stepNames = steps.map((s) => s.name);
-    expect(stepNames.indexOf("Save node_modules cache")).toBeGreaterThan(stepNames.indexOf("Install dependencies (retry on transient failures)"));
-  });
-
   it("review-enrichment's install is cached separately (its own lockfile, not an npm workspace member)", () => {
     const steps = jobSteps(readYaml(".github/workflows/ci.yml"), "validate-code");
 

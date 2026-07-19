@@ -19,6 +19,11 @@ export default defineConfig({
     // Retry a failed test once before failing the run. The loopover gate auto-CLOSES a contributor PR
     // on a red required CI, so a single transient flake must not kill an honest PR; a deterministic
     // failure still fails both attempts (and vitest flags the retried test as flaky so it stays visible).
+    // "Stays visible" means Codecov Test Analytics, not just the vitest run log: ci.yml already uploads
+    // each shard's JUnit report with report_type: test_results, which auto-enables Codecov's flaky-test
+    // detection with no extra config -- it's live today (see the "Tests" tab on any recent PR/commit in
+    // Codecov, or that PR's own Codecov bot comment). No dashboard is wired up to surface it proactively,
+    // so check it deliberately if a retry shows up in CI output rather than assuming it's pure infra noise.
     retry: 1,
     include: ["test/**/*.test.ts"],
     exclude: ["test/workers/**/*.test.ts"],

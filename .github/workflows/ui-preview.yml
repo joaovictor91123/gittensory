@@ -60,6 +60,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Same steps as the root `ui:build` script, except the last one: that script also builds
+      # @loopover/ui-miner (`npm --workspace @loopover/ui-miner run build`), a full separate Vite app
+      # this workflow never uploads or deploys (only apps/loopover-ui/dist below) -- every UI PR was
+      # paying for that build and throwing away the result. `npx turbo run build --filter=@loopover/ui`
+      # replaces the last two `ui:build` steps (`extension:build && miner-extension:build && ui build`
+      # already covered by @loopover/ui#build's own turbo.json dependsOn) and skips ui-miner entirely.
       - name: Build UI
         env:
           VITE_LOOPOVER_API_ORIGIN: https://api.loopover.ai
@@ -68,7 +74,7 @@ jobs:
           # production build (ui-deploy.yml) does NOT set this, so the escape hatch is dead-code-eliminated
           # from prod. (#authed-route-preview)
           VITE_PREVIEW: "1"
-        run: npm run ui:build
+        run: npm run ui:kit:build && npx turbo run build --filter=@loopover/engine && npm run ui:openapi && npx turbo run build --filter=@loopover/ui
 
       # The trusted deploy workflow downloads this by name + run-id. It contains only the built bundle
       # (server/ + client/) — no secrets, no source needed downstream.

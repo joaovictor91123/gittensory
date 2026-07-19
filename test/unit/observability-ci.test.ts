@@ -33,7 +33,12 @@ describe("observability config CI guard", () => {
 
     const validateCode = nestedRecord(workflow, ["jobs", "validate-code"]);
     const validateSteps = recordArray(validateCode.steps, "jobs.validate-code.steps");
-    const neutralizeStep = validateSteps.find((step) => step.name === "Neutralize untrusted npm config");
+    // "Setup workspace" (a local composite action, .github/actions/setup-workspace) replaced the
+    // inline "Neutralize untrusted npm config"/Node-setup/node_modules-cache steps that used to live
+    // directly in this job -- see ci-composite-setup-workspace.test.ts for what that action itself
+    // contains. Checked here only as a parse-sanity canary (confirms validateSteps is really this
+    // job's step list), same role the removed npmrc-step check served.
+    const setupWorkspaceStep = validateSteps.find((step) => step.name === "Setup workspace");
     const validateStep = validateSteps.find((step) => step.name === "Validate observability configs");
 
     expect(outputs.observability).toBe("${{ steps.filter.outputs.observability }}");
@@ -42,8 +47,8 @@ describe("observability config CI guard", () => {
     expect(filters).toContain("observability:");
     expect(filters).toContain("grafana/dashboards/**");
     expect(filters).toContain("prometheus/rules/**");
-    expect(neutralizeStep).toBeDefined();
-    expect(neutralizeStep!.run).toBe("rm -f .npmrc");
+    expect(setupWorkspaceStep).toBeDefined();
+    expect(setupWorkspaceStep!.uses).toBe("./.github/actions/setup-workspace");
     expect(validateStep).toBeDefined();
     // Not gated on `backend`: scripts/validate-observability-configs.mjs only ever reads
     // grafana/dashboards/*.json and prometheus/rules/alerts.yml, both fully covered by the

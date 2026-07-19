@@ -1,0 +1,56 @@
+name: Clean up closed-PR caches
+
+# Every PR-triggered run in ci.yml (node_modules, Turborepo, tsbuildinfo) saves its cache scoped to
+# that PR's refs/pull/N/merge ref -- GitHub's own cache isolation, separate from the key string itself
+# (two different PRs can share an identical key but still get two separate physical cache entries,
+# because they're scoped to different refs). Once a PR closes, nothing can ever restore a cache scoped
+# to its ref again -- and this repo auto-closes a red contributor PR one-shot (no reopen, no retry on
+# the same PR), so most of those entries are written once and then permanently unreachable, just
+# waiting on GitHub's passive 7-day-unused eviction. Confirmed live before adding this workflow: repo
+# cache usage sat at ~10.7GB of the 10GB budget, with closed-PR-scoped node_modules caches alone
+# accounting for the large majority of that -- crowding out the much smaller, much more useful
+# Turborepo/tsbuildinfo caches for LRU survival. This deletes a PR's own cache entries the moment it
+# closes (merged or not) instead of waiting on eviction.
+#
+# pull_request_target, not pull_request: this job only ever calls the GitHub API using
+# github.event.pull_request.number -- a trusted value GitHub itself populates, never anything read
+# from the PR's own code or checked out from it -- so the classic pull_request_target risk (running
+# fork-controlled code with base-repo credentials) doesn't apply here. It has to be
+# pull_request_target specifically because a fork-triggered plain `pull_request` run is always capped
+# to a read-only token regardless of the permissions block below, and deleting a cache needs
+# actions: write.
+
+on:
+  pull_request_target:
+    types: [closed]
+
+permissions:
+  actions: write
+
+concurrency:
+  group: cache-cleanup-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  cleanup:
+    name: Delete this PR's caches
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # Scoped by ref, not by key prefix (e.g. "npm-fork-") -- ANY cache entry scoped to this PR's ref
+      # (node_modules, Turborepo, tsbuildinfo, trusted or fork) is equally unreachable dead weight the
+      # moment the PR closes, regardless of which of ci.yml's cache families wrote it.
+      - name: Delete caches scoped to this PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_REF: refs/pull/${{ github.event.pull_request.number }}/merge
+        run: |
+          ids=$(gh api "repos/${{ github.repository }}/actions/caches?per_page=100" --paginate --jq ".actions_caches[] | select(.ref == \"$PR_REF\") | .id")
+          if [ -z "$ids" ]; then
+            echo "No caches found for $PR_REF"
+            exit 0
+          fi
+          for id in $ids; do
+            echo "Deleting cache $id ($PR_REF)"
+            gh api -X DELETE "repos/${{ github.repository }}/actions/caches/$id" || echo "::warning::Failed to delete cache $id (may already be gone)"
+          done

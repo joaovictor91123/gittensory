@@ -1,0 +1,55 @@
+name: CI duration report
+
+# Nothing else in this repo tracks whether ci.yml is trending slower or flakier over time -- catching
+# that currently requires a manual audit (this workflow exists because one just happened). Purely
+# additive and read-only: it doesn't touch ci.yml, doesn't gate anything, and can't fail a PR. Mirrors
+# audit.yml's shape (scheduled + workflow_dispatch, single job).
+
+on:
+  schedule:
+    - cron: "0 15 * * 1" # Mondays 15:00 UTC, an hour ahead of audit.yml so they don't contend
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ci-duration-report
+  cancel-in-progress: true
+
+jobs:
+  report:
+    name: report
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - name: Setup Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version-file: .nvmrc
+      - name: Pull ci.yml run stats
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/ci-duration-report.mjs --days=7 --output=ci-duration-report.json
+      - name: Write summary
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const report = JSON.parse(fs.readFileSync("ci-duration-report.json", "utf8"));
+          const fmt = (s) => (s === null ? "n/a" : `${Math.round(s / 60)}m ${Math.round(s % 60)}s`);
+          const pct = (r) => (r === null ? "n/a" : `${Math.round(r * 100)}%`);
+          const lines = [
+            `## CI duration report (trailing ${report.windowDays} days)`,
+            "",
+            "| Trigger | Runs | p50 | p95 | Failure rate | Cancelled (excluded) |",
+            "|---|---|---|---|---|---|",
+            `| push | ${report.push.count} | ${fmt(report.push.p50Seconds)} | ${fmt(report.push.p95Seconds)} | ${pct(report.push.failureRate)} | ${report.push.excludedCancelled} |`,
+            `| pull_request | ${report.pullRequest.count} | ${fmt(report.pullRequest.p50Seconds)} | ${fmt(report.pullRequest.p95Seconds)} | ${pct(report.pullRequest.failureRate)} | ${report.pullRequest.excludedCancelled} |`,
+            "",
+            "Duration is wall-clock (queue time included), not summed job time. \"Failure rate\" excludes cancelled runs (almost always a rapid re-push superseding its predecessor, not CI breaking) from both the count and the denominator.",
+          ];
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join("\n")}\n`);
+          NODE
