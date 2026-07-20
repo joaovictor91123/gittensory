@@ -55,6 +55,10 @@ function finiteNonNegative(value: number | undefined, fallback: number): number 
   return value;
 }
 
+function isInvalidWeight(value: number | undefined): boolean {
+  return value !== undefined && (!Number.isFinite(value) || value < 0);
+}
+
 function normalizePairwiseWeights(weights: PairwiseCalibrationWeights | undefined): {
   objectiveAnchor: number;
   pairwiseJudge: number;
@@ -64,7 +68,17 @@ function normalizePairwiseWeights(weights: PairwiseCalibrationWeights | undefine
     pairwiseJudge: finiteNonNegative(weights?.pairwiseJudge, DEFAULT_PAIRWISE_WEIGHTS.pairwiseJudge),
   };
   const total = raw.objectiveAnchor + raw.pairwiseJudge;
-  if (total <= 0) return DEFAULT_PAIRWISE_WEIGHTS;
+  // Preserve explicitly-zeroed weights rather than substituting the defaults: a caller that zeroes every
+  // component must reach the objective-only fallback in computePairwiseCalibrationScore, not silently get
+  // the default 50/50 blend (converges with reviewer-consensus-calibration.ts / #6170; #7443).
+  // NaN/negative inputs still recover to DEFAULT_PAIRWISE_WEIGHTS when the clamped total is empty — same as
+  // pre-#7443 — so the invalid-weight suite keeps asserting the 50/50 default.
+  if (total <= 0) {
+    if (isInvalidWeight(weights?.objectiveAnchor) || isInvalidWeight(weights?.pairwiseJudge)) {
+      return DEFAULT_PAIRWISE_WEIGHTS;
+    }
+    return { objectiveAnchor: 0, pairwiseJudge: 0 };
+  }
   return {
     objectiveAnchor: raw.objectiveAnchor / total,
     pairwiseJudge: raw.pairwiseJudge / total,
@@ -135,11 +149,25 @@ export function computePairwiseCalibrationScore(input: {
     .filter((score): score is number => score !== null);
   const pairwiseJudgeScore =
     stableScores.length === 0 ? null : roundScore(stableScores.reduce((sum, score) => sum + score, 0) / stableScores.length);
-  const weights = normalizePairwiseWeights(input.weights);
-  const compositeScore =
-    pairwiseJudgeScore === null
-      ? objectiveAnchorScore
-      : roundScore(objectiveAnchorScore * weights.objectiveAnchor + pairwiseJudgeScore * weights.pairwiseJudge);
+  const rawWeights = normalizePairwiseWeights(input.weights);
+  // Second-stage usable-weights pass mirrors reviewer-consensus-calibration.ts (#6170 / #7443): zero out any
+  // component whose own signal is unavailable, then fall back to objective-only when that usable total is empty
+  // (covers explicit all-zero weights even when pairwiseJudgeScore is present).
+  const usableWeights = {
+    objectiveAnchor: rawWeights.objectiveAnchor,
+    pairwiseJudge: pairwiseJudgeScore === null ? 0 : rawWeights.pairwiseJudge,
+  };
+  const usableTotal = usableWeights.objectiveAnchor + usableWeights.pairwiseJudge;
+  const weights =
+    usableTotal <= 0
+      ? { objectiveAnchor: 1, pairwiseJudge: 0 }
+      : {
+          objectiveAnchor: usableWeights.objectiveAnchor / usableTotal,
+          pairwiseJudge: usableWeights.pairwiseJudge / usableTotal,
+        };
+  const compositeScore = roundScore(
+    objectiveAnchorScore * weights.objectiveAnchor + (pairwiseJudgeScore ?? 0) * weights.pairwiseJudge,
+  );
   const unstableSamples = samples.filter((sample) => !sample.stable).length;
   const exhaustedSamples = samples.filter((sample) => sample.exhausted).length;
   return {

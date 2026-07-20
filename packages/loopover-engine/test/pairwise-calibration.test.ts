@@ -153,3 +153,17 @@ test("computePairwiseCalibrationScore normalizes invalid weights without produci
   assert.deepEqual(result.weights, { objectiveAnchor: 0.5, pairwiseJudge: 0.5 });
   assert.equal(result.compositeScore, 0.5);
 });
+
+test("computePairwiseCalibrationScore falls back to objective-only when all weights are explicitly zero (#7443)", () => {
+  const result = computePairwiseCalibrationScore({
+    objectiveAnchor: 0.42,
+    samples: [{ attempts: [{ replayFirst: "replay_better", revealedFirst: "revealed_better" }] }],
+    weights: { objectiveAnchor: 0, pairwiseJudge: 0 },
+  });
+
+  // Explicit zeros must not silently restore the 50/50 default, and must not collapse compositeScore to 0
+  // when a real pairwiseJudgeScore is present — fall back to objective-anchor only (#6170 sibling pattern).
+  assert.equal(result.pairwiseJudgeScore, 1);
+  assert.deepEqual(result.weights, { objectiveAnchor: 1, pairwiseJudge: 0 });
+  assert.equal(result.compositeScore, 0.42);
+});

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   computeGateVerdictCompositeCalibrationScore,
   computeFindingSeverityCompositeCalibrationScore,
+  computePairwiseCalibrationScore,
 } from "../../packages/loopover-engine/src/index";
 
 // Converges gate-verdict + finding-severity calibration with reviewer-consensus-calibration.ts's already-correct
@@ -73,5 +74,65 @@ describe("gate-verdict/finding-severity calibration convergence (#6170)", () => 
       { repoFullName: "acme/widgets", replayRunId: "replay-1", gateRunId: "gate-1", reason: "not_opted_in" },
       { repoFullName: "bad", replayRunId: "replay-2", gateRunId: "gate-2", reason: "invalid_repo" },
     ]);
+  });
+});
+
+// Extends the #6170 all-zero-weight pattern to pairwise-calibration.ts (#7443). Vitest coverage is what
+// Codecov grades; the engine package's node:test suite mirrors the same assertions.
+describe("pairwise calibration zero-weight convergence (#7443)", () => {
+  it("explicit all-zero weights fall back to objective-only even when pairwiseJudgeScore is present", () => {
+    const result = computePairwiseCalibrationScore({
+      objectiveAnchor: 0.42,
+      samples: [{ attempts: [{ replayFirst: "replay_better", revealedFirst: "revealed_better" }] }],
+      weights: { objectiveAnchor: 0, pairwiseJudge: 0 },
+    });
+    expect(result.pairwiseJudgeScore).toBe(1);
+    expect(result.weights).toEqual({ objectiveAnchor: 1, pairwiseJudge: 0 });
+    expect(result.compositeScore).toBe(0.42);
+  });
+
+  it("NaN/negative weights still recover to the 50/50 default (not the objective-only fallback)", () => {
+    const result = computePairwiseCalibrationScore({
+      objectiveAnchor: 1,
+      samples: [{ attempts: [{ replayFirst: "revealed_better", revealedFirst: "replay_better" }] }],
+      weights: { objectiveAnchor: Number.NaN, pairwiseJudge: -1 },
+    });
+    expect(result.weights).toEqual({ objectiveAnchor: 0.5, pairwiseJudge: 0.5 });
+    expect(result.compositeScore).toBe(0.5);
+  });
+
+  it("non-zero weights take the normalized usable path (covers usableTotal > 0)", () => {
+    const result = computePairwiseCalibrationScore({
+      objectiveAnchor: 0.55,
+      samples: [
+        { attempts: [{ replayFirst: "replay_better", revealedFirst: "revealed_better" }] },
+        { attempts: [{ replayFirst: "tie", revealedFirst: "tie" }] },
+      ],
+      weights: { objectiveAnchor: 1, pairwiseJudge: 3 },
+    });
+    expect(result.weights).toEqual({ objectiveAnchor: 0.25, pairwiseJudge: 0.75 });
+    expect(result.compositeScore).toBe(0.7);
+  });
+
+  it("missing pairwise signal zeros that component then falls back to objective-only when usable total is empty", () => {
+    const result = computePairwiseCalibrationScore({
+      objectiveAnchor: 0.42,
+      samples: [{ attempts: [{ replayFirst: "incomparable", revealedFirst: "incomparable" }] }],
+      weights: { objectiveAnchor: 0, pairwiseJudge: 0 },
+    });
+    expect(result.pairwiseJudgeScore).toBeNull();
+    expect(result.weights).toEqual({ objectiveAnchor: 1, pairwiseJudge: 0 });
+    expect(result.compositeScore).toBe(0.42);
+  });
+
+  it("missing pairwise signal with non-zero weights renormalizes to objective-only (covers usableTotal > 0 + null pairwise)", () => {
+    const result = computePairwiseCalibrationScore({
+      objectiveAnchor: 0.42,
+      samples: [{ attempts: [{ replayFirst: "incomparable", revealedFirst: "incomparable" }] }],
+      weights: { objectiveAnchor: 1, pairwiseJudge: 1 },
+    });
+    expect(result.pairwiseJudgeScore).toBeNull();
+    expect(result.weights).toEqual({ objectiveAnchor: 1, pairwiseJudge: 0 });
+    expect(result.compositeScore).toBe(0.42);
   });
 });
