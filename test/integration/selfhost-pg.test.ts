@@ -220,6 +220,46 @@ suite("Postgres backend (#977) — real Postgres", () => {
     expect(await getGateBlockOutcome(env, "owner/repo", 43)).toMatchObject({ overridden: true });
   });
 
+  // #4942: real cross-connection Postgres concurrency guarantees, verified against the actual pooled backend
+  // (mirrors the SQLite side's own in-process concurrency guarantees in test/unit/selfhost-d1-concurrency.test.ts
+  // -- see src/selfhost/backend-concurrency-model.md for the combined write-up). A scripted mock pool cannot
+  // exhibit real multi-connection race behavior, so this needs the live server this whole suite is gated on.
+  it("GUARANTEE (#4942): batch() rolls back the whole transaction on a failing statement, on its own pooled connection", async () => {
+    const db = createPgAdapter(pool);
+    await pool.query("CREATE TABLE IF NOT EXISTS concurrency_counters (id TEXT PRIMARY KEY, value INTEGER NOT NULL)");
+    await pool.query("DELETE FROM concurrency_counters");
+    await db.prepare("INSERT INTO concurrency_counters (id, value) VALUES ('c', 0)").run();
+
+    // Second statement violates the PRIMARY KEY, so the whole batch -- on its own dedicated connection -- must
+    // ROLLBACK, leaving the first statement's UPDATE un-applied too.
+    await expect(
+      db.batch([
+        db.prepare("UPDATE concurrency_counters SET value = 99 WHERE id = 'c'"),
+        db.prepare("INSERT INTO concurrency_counters (id, value) VALUES ('c', 1)"), // duplicate PK -> throws
+      ]),
+    ).rejects.toThrow();
+
+    const row = await db.prepare("SELECT value FROM concurrency_counters WHERE id = 'c'").first<{ value: number }>();
+    expect(row?.value).toBe(0);
+  });
+
+  it("GUARANTEE (#4942): N concurrent atomic increments across distinct pooled connections lose no updates", async () => {
+    const db = createPgAdapter(pool);
+    await pool.query("CREATE TABLE IF NOT EXISTS concurrency_counters (id TEXT PRIMARY KEY, value INTEGER NOT NULL)");
+    await pool.query("DELETE FROM concurrency_counters");
+    await db.prepare("INSERT INTO concurrency_counters (id, value) VALUES ('n', 0)").run();
+
+    const N = 25;
+    // Each single self-contained UPDATE is atomic on whichever pooled connection runs it -- real parallelism
+    // across connections, unlike the SQLite backend's single-connection topology, still loses no updates.
+    await Promise.all(
+      Array.from({ length: N }, () => db.prepare("UPDATE concurrency_counters SET value = value + 1 WHERE id = 'n'").run()),
+    );
+
+    const row = await db.prepare("SELECT value FROM concurrency_counters WHERE id = 'n'").first<{ value: number }>();
+    expect(row?.value).toBe(N);
+  });
+
   it("tunes github_rate_limit_observations autovacuum below Postgres's default, idempotently (#2543)", async () => {
     const db = createPgAdapter(pool);
 
