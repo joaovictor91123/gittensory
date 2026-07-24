@@ -121,6 +121,37 @@ describe("pruneExpiredRecords", () => {
     expect(rows.results.map((row) => row.id)).toEqual(["ctx-recent"]);
   });
 
+  it("dry-run falls back to 0 when the count query returns no row (defensive ?? 0 arm)", async () => {
+    const noRowEnv = {
+      DB: {
+        prepare: (_sql: string) => ({
+          bind: (..._binds: unknown[]) => ({ first: async () => undefined }), // count query returns no row → `row?.n ?? 0` fallback fires
+        }),
+      },
+    } as unknown as Env;
+    const results = await pruneExpiredRecords(noRowEnv, {
+      dryRun: true,
+      nowMs: NOW,
+      policy: [{ table: "ai_usage_events", column: "created_at", days: 90 }],
+    });
+    expect(results).toEqual([{ table: "ai_usage_events", column: "created_at", cutoff: daysAgo(90), deleted: 0 }]);
+  });
+
+  it("falls back to 0 changes when a delete run() result lacks meta (defensive ?? 0 arm)", async () => {
+    const noMetaEnv = {
+      DB: {
+        prepare: (_sql: string) => ({
+          bind: (..._binds: unknown[]) => ({ run: async () => ({}) }), // no meta → `result.meta?.changes ?? 0` fallback fires, so changes = 0 < batchSize
+        }),
+      },
+    } as unknown as Env;
+    const results = await pruneExpiredRecords(noMetaEnv, {
+      nowMs: NOW,
+      policy: [{ table: "ai_usage_events", column: "created_at", days: 90 }],
+    });
+    expect(results).toEqual([{ table: "ai_usage_events", column: "created_at", cutoff: daysAgo(90), deleted: 0 }]);
+  });
+
   it("the policy only targets append-only/log/snapshot tables (no current-state tables)", () => {
     const tables = RETENTION_POLICY.map((r) => r.table);
     for (const protectedTable of ["webhook_events", "repositories", "repository_settings", "pull_requests", "issues", "repository_ai_keys", "contributors"]) {
