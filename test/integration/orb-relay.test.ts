@@ -410,9 +410,11 @@ describe("retryFailedRelays", () => {
     const realPrepare = db(e).prepare.bind(db(e));
     const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
     e.DB = {
+      // Deliberately a non-Error throw here, to cover the `String(error)` fallback branch of the ternary
+      // (the DELETE-path regression test below covers the `error instanceof Error` branch instead).
       prepare: (sql: string) =>
         sql === "DELETE FROM orb_relay_failures WHERE delivery_id = ?"
-          ? { bind: () => ({ run: async () => { throw new Error("simulated D1 write failure"); } }) }
+          ? { bind: () => ({ run: () => Promise.reject("a bare string rejection") }) }
           : realPrepare(sql),
     } as unknown as Env["DB"];
     const fetchOk = (() => Promise.resolve(new Response("ok", { status: 200 }))) as typeof fetch;
@@ -422,7 +424,8 @@ describe("retryFailedRelays", () => {
         ([line]) =>
           String(line).includes("orb_relay_failure_finalize_write_failed") &&
           String(line).includes("finalize-delete-fail") &&
-          String(line).includes("forwarded"),
+          String(line).includes("forwarded") &&
+          String(line).includes('"error":"a bare string rejection"'),
       ),
     ).toBe(true);
   });
@@ -435,6 +438,8 @@ describe("retryFailedRelays", () => {
     const realPrepare = db(e).prepare.bind(db(e));
     const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
     e.DB = {
+      // A real Error instance here, to cover the `error instanceof Error` (true) branch of the ternary
+      // (the DELETE-path test above covers the non-Error `String(error)` fallback branch instead).
       prepare: (sql: string) =>
         sql === "UPDATE orb_relay_failures SET attempts = attempts + 1, last_attempt_at = datetime('now') WHERE delivery_id = ?"
           ? { bind: () => ({ run: async () => { throw new Error("simulated D1 write failure"); } }) }
@@ -447,7 +452,8 @@ describe("retryFailedRelays", () => {
         ([line]) =>
           String(line).includes("orb_relay_failure_finalize_write_failed") &&
           String(line).includes("finalize-update-fail") &&
-          String(line).includes("failed"),
+          String(line).includes("failed") &&
+          String(line).includes('"error":"simulated D1 write failure"'),
       ),
     ).toBe(true);
   });
