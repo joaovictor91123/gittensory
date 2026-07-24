@@ -37,6 +37,7 @@ export type WorktreeAllocator = {
   hostId: string;
   acquire(attemptId: string, repoFullName: string): WorktreeAllocation;
   release(attemptId: string): WorktreeAllocation | null;
+  purgeByRepo(repoFullName: string): number;
   listSlots(): WorktreeAllocation[];
   close(): void;
 };
@@ -304,6 +305,20 @@ export function openWorktreeAllocator(options: {
   const listSlots = db.prepare(
     "SELECT slot_index, worktree_path, attempt_id, repo_full_name, status, owner_pid, owner_host, allocated_at FROM worktree_slots ORDER BY slot_index",
   );
+  // #8320: worktree_slots is a FIXED pool (slot_index is the primary key; every slot 0..maxConcurrency-1
+  // always exists), so purging by repo must never DELETE a row the way the generic purgeStoreByRepo helper
+  // does elsewhere -- that would shrink the pool below maxConcurrency and break ensureSlots/selectFreeSlot's
+  // invariant. It must also never touch an 'active' row: that reflects a live, currently-running attempt's
+  // real worktree checkout on disk, and force-clearing it would desync the allocator from that checkout. Only
+  // 'free' rows are eligible -- release()/reclaimOrphanedAllocations() already blank repo_full_name (and the
+  // other owner fields) to NULL on every path that frees a slot, so in the overwhelming majority of real
+  // calls this matches (and clears) 0 rows; it exists purely as a defensive backstop for a row that predates
+  // this fix or was left stale by an unexpected crash path.
+  const purgeFreeByRepo = db.prepare(`
+    UPDATE worktree_slots
+    SET repo_full_name = NULL, attempt_id = NULL, owner_pid = NULL, owner_host = NULL, allocated_at = NULL
+    WHERE status = 'free' AND repo_full_name = ?
+  `);
 
   const allocator: WorktreeAllocator = {
     dbPath: resolvedPath,
@@ -355,6 +370,11 @@ export function openWorktreeAllocator(options: {
       const row = releaseByAttempt.get(normalizedAttempt) as WorktreeSlotRow | undefined;
       return row ? rowToAllocation(row) : null;
     },
+    purgeByRepo(repoFullName) {
+      const normalized = normalizeRepoFullName(repoFullName);
+      const info = purgeFreeByRepo.run(normalized);
+      return Number(info.changes);
+    },
     listSlots() {
       return (listSlots.all() as WorktreeSlotRow[]).map(rowToAllocation);
     },
@@ -364,6 +384,17 @@ export function openWorktreeAllocator(options: {
   };
 
   return allocator;
+}
+
+/** Read-only row count for `purge-cli.js`'s `--dry-run`, matching {@link WorktreeAllocator.purgeByRepo}'s own
+ *  match condition exactly (`status = 'free' AND repo_full_name = ?`) -- an 'active' slot is never counted,
+ *  same reasoning as the real purge itself (see purgeFreeByRepo's comment in {@link openWorktreeAllocator}). */
+export function countWorktreeAllocatorFreeSlotsByRepo(db: DatabaseSync, repoFullName: string): number {
+  const normalized = normalizeRepoFullName(repoFullName);
+  const row = db
+    .prepare("SELECT COUNT(*) AS count FROM worktree_slots WHERE status = 'free' AND repo_full_name = ?")
+    .get(normalized) as { count: number };
+  return Number(row.count);
 }
 
 function getDefaultWorktreeAllocator(): WorktreeAllocator {

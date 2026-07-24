@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import {
   acquireWorktree,
   closeDefaultWorktreeAllocator,
+  countWorktreeAllocatorFreeSlotsByRepo,
   isProcessAlive,
   openWorktreeAllocator,
   releaseWorktree,
@@ -94,6 +95,78 @@ describe("loopover-miner worktree allocator scaffolding (#4298)", () => {
       expect(() => allocator.acquire("attempt-c", bad)).toThrow("invalid_repo_full_name");
     }
     expect(allocator.release("missing")).toBeNull();
+  });
+
+  describe("purgeByRepo (#8320)", () => {
+    it("clears a FREE slot directly seeded with a stale repo_full_name, and counts it", () => {
+      const allocator = tempAllocator({ maxConcurrency: 1 });
+      const db = new DatabaseSync(allocator.dbPath);
+      // Normal acquire/release always blanks repo_full_name back to NULL on free -- this seeds the stale
+      // shape purgeByRepo exists to backstop (a row that predates the fix, or was left by a crash path).
+      db.exec("UPDATE worktree_slots SET repo_full_name = 'acme/widgets' WHERE slot_index = 0");
+      db.close();
+
+      expect(allocator.purgeByRepo("acme/widgets")).toBe(1);
+      const row = allocator.listSlots()[0]!;
+      expect(row.status).toBe("free");
+      expect(row.repoFullName).toBeNull();
+    });
+
+    it("never touches an ACTIVE slot for the target repo, and does not count it", () => {
+      const allocator = tempAllocator({ maxConcurrency: 1 });
+      const allocation = allocator.acquire("attempt-active", "acme/widgets");
+
+      expect(allocator.purgeByRepo("acme/widgets")).toBe(0);
+      const row = allocator.listSlots()[0]!;
+      expect(row.status).toBe("active");
+      expect(row.repoFullName).toBe("acme/widgets");
+      expect(row.attemptId).toBe(allocation.attemptId);
+    });
+
+    it("returns 0 when no row matches the repo", () => {
+      const allocator = tempAllocator({ maxConcurrency: 1 });
+      expect(allocator.purgeByRepo("acme/nothing-here")).toBe(0);
+    });
+
+    it("rejects an invalid or path-traversal repoFullName the same way acquire does", () => {
+      const allocator = tempAllocator({ maxConcurrency: 1 });
+      expect(() => allocator.purgeByRepo("bad")).toThrow("invalid_repo_full_name");
+      for (const bad of ["../widgets", "acme/..", "acme/wid\tgets"]) {
+        expect(() => allocator.purgeByRepo(bad)).toThrow("invalid_repo_full_name");
+      }
+    });
+  });
+
+  describe("countWorktreeAllocatorFreeSlotsByRepo (#8320, --dry-run's read-only counterpart)", () => {
+    it("counts a FREE slot with a stale repo_full_name, matching purgeByRepo's own condition exactly", () => {
+      const allocator = tempAllocator({ maxConcurrency: 1 });
+      const db = new DatabaseSync(allocator.dbPath);
+      db.exec("UPDATE worktree_slots SET repo_full_name = 'acme/widgets' WHERE slot_index = 0");
+      expect(countWorktreeAllocatorFreeSlotsByRepo(db, "acme/widgets")).toBe(1);
+      db.close();
+    });
+
+    it("does not count an ACTIVE slot for the target repo", () => {
+      const allocator = tempAllocator({ maxConcurrency: 1 });
+      allocator.acquire("attempt-active", "acme/widgets");
+      const db = new DatabaseSync(allocator.dbPath, { readOnly: true });
+      expect(countWorktreeAllocatorFreeSlotsByRepo(db, "acme/widgets")).toBe(0);
+      db.close();
+    });
+
+    it("returns 0 when no row matches the repo", () => {
+      const allocator = tempAllocator({ maxConcurrency: 1 });
+      const db = new DatabaseSync(allocator.dbPath, { readOnly: true });
+      expect(countWorktreeAllocatorFreeSlotsByRepo(db, "acme/nothing-here")).toBe(0);
+      db.close();
+    });
+
+    it("rejects an invalid repoFullName", () => {
+      const allocator = tempAllocator({ maxConcurrency: 1 });
+      const db = new DatabaseSync(allocator.dbPath, { readOnly: true });
+      expect(() => countWorktreeAllocatorFreeSlotsByRepo(db, "bad")).toThrow("invalid_repo_full_name");
+      db.close();
+    });
   });
 
   it("isProcessAlive returns false for invalid or dead pids", () => {
