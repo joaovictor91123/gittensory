@@ -687,6 +687,11 @@ root mirror at `test/unit/miner-governor-action-mode.test.ts` (#8345) — `codec
 vitest suite (see [Test](#test)), so this safety-adjacent write-execution gate is gradeable there as well as by
 the package's own `node:test` suite, alongside the existing `test/unit/miner-governor-kill-switch.test.ts` mirror.
 
+Similarly, the miner self-review adapter (`src/miner/self-review-adapter.ts`, which builds the predicted-gate +
+slop inputs the miner's self-review pass runs) has a Codecov-visible root mirror at
+`test/unit/self-review-adapter.test.ts` (#8348) — again because `codecov/patch` only reads the root vitest suite
+(see [Test](#test)), not the package's own `node:test` suite.
+
 ## Governor ledger
 
 `normalizeGovernorLedgerEvent` validates append-only governor decision rows before the local miner persists them.
