@@ -72,6 +72,52 @@ export async function recordMcpToolCall(options: RecordMcpToolCallOptions, event
   }
 }
 
+/**
+ * Stdio-tool chokepoint (#6238 / #8690): every registerStdioTool-registered tool routes through here
+ * once per invocation. Awaits {@link recordMcpToolCall}'s flush, and never lets a telemetry failure
+ * reach the tool caller (defensive try/catch on top of recordMcpToolCall's own never-throw guarantee).
+ */
+export async function recordStdioToolTelemetry(
+  telemetryEnabled: boolean,
+  tool: string,
+  ok: boolean,
+  durationMs: number,
+  record: (options: RecordMcpToolCallOptions, event: McpToolCallEvent) => Promise<void> = recordMcpToolCall,
+): Promise<void> {
+  try {
+    await record({ telemetryEnabled }, { tool, callerType: "local", ok, durationMs });
+  } catch {
+    // Telemetry must never affect the tool response (#6238).
+  }
+}
+
+type StdioToolHandler = (...args: any[]) => Promise<any>;
+
+/**
+ * Wrap a stdio tool handler so success and throw paths both await telemetry flush before returning
+ * (#8690). Lives in lib/ (not bin/) so codecov/patch can attribute the await branches via unit tests;
+ * bin registration stays thin glue.
+ */
+export function wrapStdioToolHandler(
+  name: string,
+  getTelemetryEnabled: () => boolean,
+  handler: StdioToolHandler,
+): StdioToolHandler {
+  return async (...args) => {
+    const startedAt = Date.now();
+    try {
+      const result = await handler(...args);
+      // Mirror the remote's caller-visible outcome (`response.status < 400`): a handler that reports
+      // failure by returning an error result is not a success, even though it never threw.
+      await recordStdioToolTelemetry(getTelemetryEnabled(), name, result?.isError !== true, Date.now() - startedAt);
+      return result;
+    } catch (error) {
+      await recordStdioToolTelemetry(getTelemetryEnabled(), name, false, Date.now() - startedAt);
+      throw error;
+    }
+  };
+}
+
 /** Trim a possibly-undefined env string, treating blank/whitespace as absent. */
 function trimmedOrUndefined(value: string | undefined): string | undefined {
   const trimmed = value?.trim();

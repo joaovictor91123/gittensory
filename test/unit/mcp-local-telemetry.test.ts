@@ -34,7 +34,9 @@ vi.mock("posthog-node", () => ({
   },
 }));
 
-const { recordMcpToolCall } = await import("../../packages/loopover-mcp/lib/telemetry.js");
+const { recordMcpToolCall, recordStdioToolTelemetry, wrapStdioToolHandler } = await import(
+  "../../packages/loopover-mcp/lib/telemetry.js"
+);
 
 type LocalToolCallEvent = { tool: string; callerType?: "local"; ok: boolean; durationMs: number };
 type CapturedMessage = { distinctId: string; event: string; properties: Record<string, unknown>; disableGeoip: boolean };
@@ -220,5 +222,105 @@ describe("recordMcpToolCall (local MCP wrapper, #6236)", () => {
     await expect(recordMcpToolCall({ telemetryEnabled: true }, EVENT)).resolves.toBeUndefined();
     expect(h.captureSpy).toHaveBeenCalledTimes(1);
     expect(h.flushSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("recordStdioToolTelemetry / wrapStdioToolHandler (#8690)", () => {
+  beforeEach(() => {
+    h.constructSpy.mockClear();
+    h.captureSpy.mockClear();
+    h.flushSpy.mockClear();
+    h.state.throwOnConstruct = false;
+    h.state.throwOnCapture = false;
+    h.state.throwOnFlush = false;
+    h.state.flushImpl = null;
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("awaits flush before recordStdioToolTelemetry resolves when opted in", async () => {
+    vi.stubEnv("LOOPOVER_MCP_POSTHOG_API_KEY", "phc_test");
+    let releaseFlush!: () => void;
+    const flushGate = new Promise<void>((resolve) => {
+      releaseFlush = resolve;
+    });
+    h.state.flushImpl = async () => {
+      await flushGate;
+    };
+
+    let settled = false;
+    const pending = recordStdioToolTelemetry(true, "loopover_status", true, 12).then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(h.flushSpy).toHaveBeenCalledTimes(1);
+    expect(settled).toBe(false);
+    releaseFlush();
+    await pending;
+    expect(settled).toBe(true);
+  });
+
+  it("swallows a throwing recorder without rejecting (#6238)", async () => {
+    await expect(
+      recordStdioToolTelemetry(true, "loopover_status", true, 1, async () => {
+        throw new Error("recorder boom");
+      }),
+    ).resolves.toBeUndefined();
+    expect(h.constructSpy).not.toHaveBeenCalled();
+  });
+
+  it("wrapStdioToolHandler awaits telemetry on success and preserves the handler result", async () => {
+    vi.stubEnv("LOOPOVER_MCP_POSTHOG_API_KEY", "phc_test");
+    let releaseFlush!: () => void;
+    const flushGate = new Promise<void>((resolve) => {
+      releaseFlush = resolve;
+    });
+    h.state.flushImpl = async () => {
+      await flushGate;
+    };
+
+    const wrapped = wrapStdioToolHandler("loopover_demo", () => true, async () => ({ ok: true, isError: false }));
+    let settled = false;
+    const pending = wrapped().then((result) => {
+      settled = true;
+      return result;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    releaseFlush();
+    await expect(pending).resolves.toEqual({ ok: true, isError: false });
+    expect(h.flushSpy).toHaveBeenCalledTimes(1);
+    const message = h.captureSpy.mock.calls[0]![0] as CapturedMessage;
+    expect(message.properties).toMatchObject({ tool: "loopover_demo", ok: true });
+  });
+
+  it("wrapStdioToolHandler treats isError results as failed telemetry ok=false", async () => {
+    vi.stubEnv("LOOPOVER_MCP_POSTHOG_API_KEY", "phc_test");
+    const wrapped = wrapStdioToolHandler("loopover_demo", () => true, async () => ({ isError: true }));
+    await wrapped();
+    const message = h.captureSpy.mock.calls[0]![0] as CapturedMessage;
+    expect(message.properties).toMatchObject({ tool: "loopover_demo", ok: false });
+  });
+
+  it("wrapStdioToolHandler records ok=false then rethrows when the handler throws", async () => {
+    vi.stubEnv("LOOPOVER_MCP_POSTHOG_API_KEY", "phc_test");
+    const wrapped = wrapStdioToolHandler("loopover_demo", () => true, async () => {
+      throw new Error("handler boom");
+    });
+    await expect(wrapped()).rejects.toThrow("handler boom");
+    expect(h.flushSpy).toHaveBeenCalledTimes(1);
+    const message = h.captureSpy.mock.calls[0]![0] as CapturedMessage;
+    expect(message.properties).toMatchObject({ tool: "loopover_demo", ok: false });
+  });
+
+  it("wrapStdioToolHandler is a no-op for PostHog when telemetry is disabled", async () => {
+    vi.stubEnv("LOOPOVER_MCP_POSTHOG_API_KEY", "phc_test");
+    const wrapped = wrapStdioToolHandler("loopover_demo", () => false, async () => ({ ok: true }));
+    await expect(wrapped()).resolves.toEqual({ ok: true });
+    expect(h.constructSpy).not.toHaveBeenCalled();
   });
 });
