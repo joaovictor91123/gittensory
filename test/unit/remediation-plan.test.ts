@@ -206,6 +206,26 @@ describe("buildRemediationPlan", () => {
     expect(plan.recommendedRerunCondition).toMatch(/branch, base, or PR state changes/i);
   });
 
+  it("redacts the plural form rankings the same way as singular ranking (#8886)", () => {
+    const plan = buildRemediationPlan({
+      login: "miner",
+      repoFullName: "octo/demo",
+      accountStateBlockers: [],
+      branchQualityBlockers: [],
+      scoreBlockers: ["this shows the rankings of contributors"],
+      recommendedRerunCondition: "Rerun after rankings improve.",
+    });
+
+    expect(plan.items).toEqual([
+      expect.objectContaining({
+        source: "submission_readiness",
+        step: "Resolve submission readiness blockers before submission.",
+      }),
+    ]);
+    expect(JSON.stringify(plan)).not.toMatch(/\brankings?\b/i);
+    expect(plan.recommendedRerunCondition).toMatch(/branch, base, or PR state changes/i);
+  });
+
   it("uses neutral submission-readiness rerun conditions and medium impact for generic score blockers", () => {
     const plan = buildRemediationPlan({
       login: "miner",
