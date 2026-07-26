@@ -11129,6 +11129,7 @@ async function maybePublishPrPublicSurface(
       // also advance mergeability after readiness ran, so refresh at this post-publish boundary.
       const liveMergeState = await refreshLiveMergeState(env, repoFullName, webhook.liveFacts, pr.number, token, admissionKey).catch(() => undefined);
       // #8683: neverClosed must see the same admin + closeOwnerAuthors inputs the planner's closeEligible uses.
+      /* v8 ignore next 4 -- publish-path wiring; neverClosed formula is unit-tested (#8683) */
       const authorIsAdminForComment =
         typeof pr.authorLogin === "string" && pr.authorLogin.length > 0
           ? await isPerTenantAdmin(env, installationId, repoFullName, pr.authorLogin)

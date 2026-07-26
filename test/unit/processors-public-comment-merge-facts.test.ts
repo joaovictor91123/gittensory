@@ -235,4 +235,24 @@ describe("derivePublicCommentMergeFacts() — neverClosed (#8/#9, #4607)", () =>
       }).neverClosed,
     ).toBe(false);
   });
+
+  it("keeps automation bots neverClosed even when closeOwnerAuthors is true (#8683)", () => {
+    expect(
+      facts({
+        authorLogin: "dependabot[bot]",
+        authorIsAdmin: false,
+        settings: { ...NO_GUARDRAIL_OVERRIDES, closeOwnerAuthors: true },
+      }).neverClosed,
+    ).toBe(true);
+  });
+
+  it("treats a non-admin contributor as closable regardless of closeOwnerAuthors (#8683)", () => {
+    expect(
+      facts({
+        authorLogin: "contributor",
+        authorIsAdmin: false,
+        settings: { ...NO_GUARDRAIL_OVERRIDES, closeOwnerAuthors: true },
+      }).neverClosed,
+    ).toBe(false);
+  });
 });
